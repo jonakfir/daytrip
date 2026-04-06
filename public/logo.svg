@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 48" height="48">
+  <!-- Compass mark -->
+  <g transform="translate(20,24)">
+    <polygon points="0,-16 2.5,-5 -2.5,-5" fill="#C4522A"/>
+    <polygon points="0,16 2.5,5 -2.5,5" fill="#C4522A"/>
+    <polygon points="16,0 5,2.5 5,-2.5" fill="#C4522A"/>
+    <polygon points="-16,0 -5,2.5 -5,-2.5" fill="#C4522A"/>
+    <polygon points="11,-11 2,-4 4,-2" fill="#C4522A" opacity="0.5"/>
+    <polygon points="11,11 2,4 4,2" fill="#C4522A" opacity="0.5"/>
+    <polygon points="-11,11 -2,4 -4,2" fill="#C4522A" opacity="0.5"/>
+    <polygon points="-11,-11 -2,-4 -4,-2" fill="#C4522A" opacity="0.5"/>
+    <circle cx="0" cy="0" r="3.5" fill="#C4522A"/>
+  </g>
+  <!-- "Daytrip" wordmark -->
+  <text x="46" y="34" font-family="'Cormorant Garamond', 'Georgia', serif" font-size="32" font-weight="600" fill="#C4522A" letter-spacing="0.04em">Daytrip</text>
+</svg>

@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-cream-100 text-charcoal-900 font-sans;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
+  }
+
+  ::selection {
+    @apply bg-terracotta-500/20 text-terracotta-700;
+  }
+}
+
+@layer components {
+  .gradient-warm {
+    background: linear-gradient(135deg, #FDF6EC 0%, #FAE8CC 50%, #FDF6EC 100%);
+  }
+
+  .gradient-hero {
+    background: linear-gradient(180deg, rgba(253, 246, 236, 0) 0%, rgba(253, 246, 236, 0.8) 70%, #FDF6EC 100%);
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #C4522A 0%, #D4734A 100%);
+  }
+
+  .card-editorial {
+    @apply bg-white rounded-2xl shadow-card hover:shadow-card-hover transition-shadow duration-300;
+  }
+
+  .divider-ornament {
+    @apply relative text-center;
+  }
+
+  .divider-ornament::before,
+  .divider-ornament::after {
+    content: "";
+    @apply absolute top-1/2 h-px bg-cream-300;
+    width: calc(50% - 2rem);
+  }
+
+  .divider-ornament::before {
+    left: 0;
+  }
+
+  .divider-ornament::after {
+    right: 0;
+  }
+}
+
+@layer utilities {
+  .mask-fade-bottom {
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  }
+}
+
+/* WebGL canvas */
+#hero-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}

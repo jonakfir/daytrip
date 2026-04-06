@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#FDF6EC"/>
+  <!-- Outer compass rose points -->
+  <g transform="translate(32,32)">
+    <!-- Cardinal points (N, S, E, W) -->
+    <polygon points="0,-26 3,-8 -3,-8" fill="#C4522A"/>
+    <polygon points="0,26 3,8 -3,8" fill="#C4522A"/>
+    <polygon points="26,0 8,3 8,-3" fill="#C4522A"/>
+    <polygon points="-26,0 -8,3 -8,-3" fill="#C4522A"/>
+    <!-- Intercardinal points (NE, SE, SW, NW) -->
+    <polygon points="18,-18 3,-5 5,-3" fill="#C4522A" opacity="0.6"/>
+    <polygon points="18,18 3,5 5,3" fill="#C4522A" opacity="0.6"/>
+    <polygon points="-18,18 -3,5 -5,3" fill="#C4522A" opacity="0.6"/>
+    <polygon points="-18,-18 -3,-5 -5,-3" fill="#C4522A" opacity="0.6"/>
+    <!-- Inner ring -->
+    <circle cx="0" cy="0" r="10" fill="none" stroke="#C4522A" stroke-width="1.5" opacity="0.3"/>
+    <!-- Sun center -->
+    <circle cx="0" cy="0" r="5.5" fill="#C4522A"/>
+    <!-- Sun rays -->
+    <g stroke="#C4522A" stroke-width="1.5" stroke-linecap="round">
+      <line x1="0" y1="-8" x2="0" y2="-10"/>
+      <line x1="5.66" y1="-5.66" x2="7.07" y2="-7.07"/>
+      <line x1="8" y1="0" x2="10" y2="0"/>
+      <line x1="5.66" y1="5.66" x2="7.07" y2="7.07"/>
+      <line x1="0" y1="8" x2="0" y2="10"/>
+      <line x1="-5.66" y1="5.66" x2="-7.07" y2="7.07"/>
+      <line x1="-8" y1="0" x2="-10" y2="0"/>
+      <line x1="-5.66" y1="-5.66" x2="-7.07" y2="-7.07"/>
+    </g>
+  </g>
+</svg>
