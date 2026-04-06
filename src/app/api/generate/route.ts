@@ -210,6 +210,12 @@ async function generateWithClaude(
 You produce detailed, realistic plans using real place names, real restaurants, real attractions, and accurate travel times.
 Your itineraries feel hand-crafted by a local expert who knows the hidden gems and the must-sees.
 
+CRITICAL REQUIREMENTS:
+- Prioritize places that people actually enjoy — high-rated restaurants, beloved attractions, and memorable experiences. Include ratings and review counts.
+- Include walking distances and transit times between consecutive activities so travelers can plan logistics.
+- For food and culture activities, provide 2 alternative options travelers can swap to, so they have choices.
+- Make activities flow logically by geography — group nearby places together to minimize travel time.
+
 Always respond with valid JSON matching the exact schema requested. No markdown, no explanation, just JSON.`;
 
   const userPrompt = `Create a ${numDays}-day itinerary for ${req.destination}.
@@ -226,8 +232,12 @@ ${externalContext}
 Respond with a JSON object containing these keys:
 {
   "days": DayPlan[] — one for each day with dayNumber, date (YYYY-MM-DD starting from ${req.startDate}), title, morning (array of Activity), afternoon (array of Activity), evening (array of Activity), and optional tip string.
-  Each Activity has: time (HH:MM), name, category (one of: food, culture, shopping, nature, entertainment, transport), description (2-3 sentences), duration, optional bookingUrl, optional bookingPrice.
+  Each Activity has: time (HH:MM), name, category (one of: food, culture, shopping, nature, entertainment, transport), description (2-3 sentences), duration, optional bookingUrl, optional bookingPrice, optional distanceFromPrevious (e.g. "0.5 km"), optional walkingTime (e.g. "7 min"), optional rating (number like 4.7), optional reviewCount (number like 12400).
   Include 3-4 activities per time block.
+
+  IMPORTANT: For each non-transport activity, include distanceFromPrevious and walkingTime showing how far it is from the previous activity. This helps travelers plan logistics.
+
+  For food and culture activities, also include "alternatives": an array of 2 alternative activities in the same area that travelers could swap to instead. Each alternative has the same fields as Activity (without its own alternatives). Use places that are highly rated and popular with travelers. Include rating and reviewCount on alternatives too.
 
   "hotels": Hotel[] — 3 options at different price points. Each has name, pricePerNight ($XX), rating (number), bookingUrl.
 

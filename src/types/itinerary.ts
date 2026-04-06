@@ -12,6 +12,11 @@ export interface Activity {
   duration: string;
   bookingUrl?: string;
   bookingPrice?: string;
+  distanceFromPrevious?: string;
+  walkingTime?: string;
+  rating?: number;
+  reviewCount?: number;
+  alternatives?: Activity[];
 }
 
 export interface DayPlan {
