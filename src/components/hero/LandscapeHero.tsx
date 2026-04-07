@@ -66,9 +66,9 @@ export default function LandscapeHero() {
   );
 
   return (
-    <section id="plan" className="bg-cream-100">
+    <section id="plan" className="relative bg-cream-100" style={{ zIndex: 0 }}>
       {/* 3D Canvas — taller, with smooth gradient fades on all edges */}
-      <div className="relative h-[50vh] min-h-[300px] overflow-hidden">
+      <div className="relative h-[50vh] min-h-[300px] overflow-hidden" style={{ contain: 'paint' }}>
         <HeroCanvas landscapeType={landscapeType} />
         {/* Smooth fade on all edges so the landscape floats naturally */}
         <div className="absolute inset-0 pointer-events-none" style={{

@@ -10,10 +10,13 @@ export default function Home() {
     <main className="min-h-screen bg-cream-100">
       <Navbar />
       <LandscapeHero />
-      <SampleItineraries />
-      <HowItWorks />
-      <WorldMap />
-      <Footer />
+      {/* Force a new stacking context so WebGL canvas doesn't paint over these sections */}
+      <div className="relative" style={{ zIndex: 1, isolation: 'isolate' }}>
+        <SampleItineraries />
+        <HowItWorks />
+        <WorldMap />
+        <Footer />
+      </div>
     </main>
   );
 }
