@@ -56,6 +56,23 @@ const DESTINATIONS = [
   'Hoi An, Vietnam',
   'Bruges, Belgium',
   'Zanzibar, Tanzania',
+  'London, England',
+  'Rome, Italy',
+  'Amsterdam, Netherlands',
+  'Sydney, Australia',
+  'Bangkok, Thailand',
+  'New York, USA',
+  'Dubai, UAE',
+  'Singapore',
+  'Hong Kong',
+  'Berlin, Germany',
+  'Istanbul, Turkey',
+  'Seoul, South Korea',
+  'Athens, Greece',
+  'Florence, Italy',
+  'Vienna, Austria',
+  'Prague, Czech Republic',
+  'Buenos Aires, Argentina',
 ];
 
 const TRAVEL_STYLES = ['Adventure', 'Cultural', 'Relaxation', 'Foodie', 'Luxury'];
