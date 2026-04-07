@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import { Check, Sparkles, Zap, Crown } from "lucide-react";
 
 const plans = [
@@ -75,11 +74,8 @@ export default function PricingPage() {
     <main className="min-h-screen bg-cream-100 py-20 px-4">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-16"
-        >
+        <div className="text-center mb-16">
+
           <p className="text-caption uppercase tracking-[0.2em] text-terracotta-500 font-sans mb-3">
             Pricing
           </p>
@@ -90,16 +86,13 @@ export default function PricingPage() {
             AI-powered itineraries with real bookable hotels, flights, and activities.
             Choose the plan that fits your wanderlust.
           </p>
-        </motion.div>
+        </div>
 
         {/* Plans */}
         <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
-          {plans.map((plan, index) => (
-            <motion.div
+          {plans.map((plan) => (
+            <div
               key={plan.name}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
               className={`relative bg-white rounded-3xl p-8 shadow-card hover:shadow-elevated transition-shadow duration-300 ${
                 plan.popular
                   ? "ring-2 ring-terracotta-500 scale-[1.02]"
@@ -166,7 +159,7 @@ export default function PricingPage() {
               >
                 {plan.cta}
               </button>
-            </motion.div>
+            </div>
           ))}
         </div>
 
@@ -182,18 +175,11 @@ export default function PricingPage() {
       </div>
 
       {/* Toast notification */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-charcoal-900 text-white px-6 py-3 rounded-xl shadow-elevated font-sans text-body-sm"
-          >
-            Payment integration launching soon — join the waitlist!
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-charcoal-900 text-white px-6 py-3 rounded-xl shadow-elevated font-sans text-body-sm animate-fade-in">
+          Payment integration launching soon — join the waitlist!
+        </div>
+      )}
     </main>
   );
 }
