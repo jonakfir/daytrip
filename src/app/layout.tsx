@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Karla } from "next/font/google";
+import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
 const cormorant = Cormorant_Garamond({
@@ -38,7 +39,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${cormorant.variable} ${karla.variable}`}>
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

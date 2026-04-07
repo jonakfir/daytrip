@@ -40,6 +40,11 @@ function GeneratingContent() {
           }),
         });
 
+        if (response.status === 403) {
+          clearInterval(stepInterval);
+          router.push("/pricing");
+          return;
+        }
         if (!response.ok) throw new Error("Failed to generate itinerary");
 
         const data = await response.json();

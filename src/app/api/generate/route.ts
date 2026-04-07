@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabase";
 import { MOCK_TOKYO_ITINERARY } from "@/lib/mock-data";
+import { isAdminRequest } from "@/lib/check-auth";
 import type {
   GenerateRequest,
   Itinerary,
@@ -316,6 +317,19 @@ async function storeItinerary(
 
 export async function POST(request: NextRequest) {
   try {
+    // Auth check: admin gets free access, everyone else needs to pay
+    const authCookie = request.cookies.get("daytrip-auth")?.value;
+    const admin = await isAdminRequest(authCookie);
+
+    if (!admin) {
+      // Non-admin: check if they have a valid payment/subscription
+      // For now, block non-admin users and redirect to pricing
+      return NextResponse.json(
+        { error: "subscription_required", message: "Please subscribe to generate itineraries" },
+        { status: 403 }
+      );
+    }
+
     const body = (await request.json()) as GenerateRequest;
 
     if (!body.destination || !body.startDate || !body.endDate) {
