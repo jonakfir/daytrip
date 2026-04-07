@@ -59,19 +59,25 @@ export default function Navbar() {
           </div>
 
           {/* CTA */}
-          <Link
-            href="/#plan"
-            className="rounded-full bg-terracotta-500 px-5 py-2 font-sans text-body-sm font-medium text-white transition-colors hover:bg-terracotta-600"
-            onClick={(e) => {
-              // If already on homepage, smooth scroll to search
+          <button
+            onClick={() => {
               if (window.location.pathname === "/") {
-                e.preventDefault();
-                window.scrollTo({ top: 0, behavior: "smooth" });
+                // Already on homepage — scroll to search section
+                const el = document.getElementById("plan");
+                if (el) {
+                  el.scrollIntoView({ behavior: "smooth" });
+                } else {
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }
+              } else {
+                // Navigate to homepage
+                window.location.href = "/#plan";
               }
             }}
+            className="rounded-full bg-terracotta-500 px-5 py-2 font-sans text-body-sm font-medium text-white transition-colors hover:bg-terracotta-600"
           >
             Plan a trip
-          </Link>
+          </button>
         </div>
       </nav>
     </motion.header>

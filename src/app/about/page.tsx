@@ -45,12 +45,13 @@ export default function AboutPage() {
           </p>
 
           <h2 className="font-serif text-heading-xl text-charcoal-900 mt-12 mb-4">
-            Always Free
+            Simple Pricing
           </h2>
           <p>
-            Daytrip is completely free for travelers. We earn a small commission when you book
-            through our affiliate partners — at no extra cost to you. This means our incentives
-            are aligned: we succeed when your trip is unforgettable.
+            Daytrip offers flexible plans to fit every traveler. From single-trip passes to
+            unlimited yearly access, there is an option for everyone. We also earn a small
+            commission when you book through our affiliate partners — at no extra cost to you.
+            This means our incentives are aligned: we succeed when your trip is unforgettable.
           </p>
         </div>
       </article>
