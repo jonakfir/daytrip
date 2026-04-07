@@ -365,113 +365,122 @@ export default function DestinationSearch({
           </div>
         )}
 
-        {/* Trip details row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {/* Start date */}
-          <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30 pointer-events-none" />
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full bg-cream-50 rounded-xl pl-10 pr-3 py-3 text-body-sm text-charcoal-900
-                focus:outline-none focus:ring-2 focus:ring-terracotta-500/40 focus:bg-white
-                transition-all duration-300"
-              aria-label="Start date"
-            />
-          </div>
-
-          {/* End date */}
-          <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30 pointer-events-none" />
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full bg-cream-50 rounded-xl pl-10 pr-3 py-3 text-body-sm text-charcoal-900
-                focus:outline-none focus:ring-2 focus:ring-terracotta-500/40 focus:bg-white
-                transition-all duration-300"
-              aria-label="End date"
-            />
-          </div>
-
-          {/* Travelers counter */}
-          <div className="flex items-center justify-between bg-cream-50 rounded-xl px-3 py-3">
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-charcoal-800/30" />
-              <span className="text-body-sm text-charcoal-800/60">Travelers</span>
+        {/* Trip details */}
+        <div className="space-y-3">
+          {/* Dates row — full width */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-caption font-sans text-charcoal-800/50 mb-1.5 ml-1">Start date</label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30 pointer-events-none" />
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full bg-cream-50 rounded-xl pl-10 pr-4 py-3 text-body text-charcoal-900
+                    focus:outline-none focus:ring-2 focus:ring-terracotta-500/40 focus:bg-white
+                    transition-all duration-300"
+                  aria-label="Start date"
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTravelers((t) => Math.max(1, t - 1))}
-                className="w-6 h-6 rounded-full bg-cream-200 hover:bg-terracotta-500 hover:text-white
-                  flex items-center justify-center transition-colors duration-200"
-                aria-label="Decrease travelers"
-              >
-                <Minus className="w-3 h-3" />
-              </button>
-              <span className="text-body-sm font-medium text-charcoal-900 w-4 text-center">
-                {travelers}
-              </span>
-              <button
-                type="button"
-                onClick={() => setTravelers((t) => Math.min(12, t + 1))}
-                className="w-6 h-6 rounded-full bg-cream-200 hover:bg-terracotta-500 hover:text-white
-                  flex items-center justify-center transition-colors duration-200"
-                aria-label="Increase travelers"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
+            <div>
+              <label className="block text-caption font-sans text-charcoal-800/50 mb-1.5 ml-1">End date</label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30 pointer-events-none" />
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full bg-cream-50 rounded-xl pl-10 pr-4 py-3 text-body text-charcoal-900
+                    focus:outline-none focus:ring-2 focus:ring-terracotta-500/40 focus:bg-white
+                    transition-all duration-300"
+                  aria-label="End date"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Travel style dropdown */}
-          <div className="relative" ref={styleDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setIsStyleOpen(!isStyleOpen)}
-              className="w-full flex items-center justify-between bg-cream-50 rounded-xl px-3 py-3
-                text-body-sm text-charcoal-900 focus:outline-none focus:ring-2
-                focus:ring-terracotta-500/40 transition-all duration-300"
-              aria-label="Travel style"
-            >
-              <span>{style}</span>
-              <ChevronDown
-                className={`w-4 h-4 text-charcoal-800/30 transition-transform duration-200
-                  ${isStyleOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-            <AnimatePresence>
-              {isStyleOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute z-50 top-full mt-1 w-full bg-white rounded-xl shadow-elevated
-                    border border-cream-200 overflow-hidden"
+          {/* Travelers + Style row */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Travelers counter — bigger buttons */}
+            <div className="flex items-center justify-between bg-cream-50 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-charcoal-800/30" />
+                <span className="text-body text-charcoal-800/60">Travelers</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTravelers((t) => Math.max(1, t - 1))}
+                  className="w-8 h-8 rounded-full bg-cream-200 hover:bg-terracotta-500 hover:text-white
+                    flex items-center justify-center transition-colors duration-200 active:scale-95"
+                  aria-label="Decrease travelers"
                 >
-                  {TRAVEL_STYLES.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => {
-                        setStyle(s);
-                        setIsStyleOpen(false);
-                      }}
-                      className={`w-full px-4 py-2.5 text-left text-body-sm transition-colors duration-150
-                        ${s === style
-                          ? 'bg-terracotta-500/10 text-terracotta-600 font-medium'
-                          : 'text-charcoal-900 hover:bg-cream-50'
-                        }`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <Minus className="w-4 h-4" />
+                </button>
+                <span className="text-body font-semibold text-charcoal-900 w-5 text-center">
+                  {travelers}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTravelers((t) => Math.min(12, t + 1))}
+                  className="w-8 h-8 rounded-full bg-cream-200 hover:bg-terracotta-500 hover:text-white
+                    flex items-center justify-center transition-colors duration-200 active:scale-95"
+                  aria-label="Increase travelers"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Travel style dropdown */}
+            <div className="relative" ref={styleDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsStyleOpen(!isStyleOpen)}
+                className="w-full h-full flex items-center justify-between bg-cream-50 rounded-xl px-4 py-3
+                  text-body text-charcoal-900 focus:outline-none focus:ring-2
+                  focus:ring-terracotta-500/40 transition-all duration-300"
+                aria-label="Travel style"
+              >
+                <span>{style}</span>
+                <ChevronDown
+                  className={`w-4 h-4 text-charcoal-800/30 transition-transform duration-200
+                    ${isStyleOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+              <AnimatePresence>
+                {isStyleOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute z-50 top-full mt-1 w-full bg-white rounded-xl shadow-elevated
+                      border border-cream-200 overflow-hidden"
+                  >
+                    {TRAVEL_STYLES.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          setStyle(s);
+                          setIsStyleOpen(false);
+                        }}
+                        className={`w-full px-4 py-2.5 text-left text-body-sm transition-colors duration-150
+                          ${s === style
+                            ? 'bg-terracotta-500/10 text-terracotta-600 font-medium'
+                            : 'text-charcoal-900 hover:bg-cream-50'
+                          }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
