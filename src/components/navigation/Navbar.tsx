@@ -60,8 +60,15 @@ export default function Navbar() {
 
           {/* CTA */}
           <Link
-            href="/plan"
+            href="/#plan"
             className="rounded-full bg-terracotta-500 px-5 py-2 font-sans text-body-sm font-medium text-white transition-colors hover:bg-terracotta-600"
+            onClick={(e) => {
+              // If already on homepage, smooth scroll to search
+              if (window.location.pathname === "/") {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
+            }}
           >
             Plan a trip
           </Link>
