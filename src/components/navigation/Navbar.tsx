@@ -43,9 +43,17 @@ export default function Navbar() {
           {/* Links */}
           <div className="hidden items-center gap-6 sm:flex">
             {navLinks.map((link) => (
-              <Link
+              <button
                 key={link.label}
-                href={link.href}
+                onClick={() => {
+                  const id = link.href.replace('#', '');
+                  if (window.location.pathname === '/') {
+                    const el = document.getElementById(id);
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  } else {
+                    window.location.href = `/${link.href}`;
+                  }
+                }}
                 className={cn(
                   "font-sans text-body-sm font-medium transition-colors duration-300",
                   scrolled
@@ -54,7 +62,7 @@ export default function Navbar() {
                 )}
               >
                 {link.label}
-              </Link>
+              </button>
             ))}
           </div>
 
