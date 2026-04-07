@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Check, Sparkles, Zap, Crown } from "lucide-react";
 
 const plans = [
@@ -63,6 +64,12 @@ const plans = [
 
 export default function PricingPage() {
   const router = useRouter();
+  const [toast, setToast] = useState(false);
+
+  const showToast = () => {
+    setToast(true);
+    setTimeout(() => setToast(false), 3000);
+  };
 
   return (
     <main className="min-h-screen bg-cream-100 py-20 px-4">
@@ -150,12 +157,7 @@ export default function PricingPage() {
               </ul>
 
               <button
-                onClick={() => {
-                  // In production, this would redirect to Stripe checkout
-                  alert(
-                    "Payment integration coming soon! For now, ask the site admin for access."
-                  );
-                }}
+                onClick={showToast}
                 className={`w-full py-3.5 rounded-xl font-sans font-medium transition-colors ${
                   plan.popular
                     ? "bg-terracotta-500 text-white hover:bg-terracotta-600"
@@ -178,6 +180,20 @@ export default function PricingPage() {
           </button>
         </div>
       </div>
+
+      {/* Toast notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-charcoal-900 text-white px-6 py-3 rounded-xl shadow-elevated font-sans text-body-sm"
+          >
+            Payment integration launching soon — join the waitlist!
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
