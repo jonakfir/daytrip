@@ -81,15 +81,17 @@ export default function LandscapeHero() {
   );
 
   return (
-    <section className="relative w-full h-screen min-h-[600px] overflow-hidden flex items-center justify-center">
-      {/* WebGL background */}
-      <HeroCanvas landscapeType={landscapeType} />
+    <section className="relative w-full min-h-screen overflow-hidden flex flex-col">
+      {/* WebGL background - positioned absolutely behind everything */}
+      <div className="absolute inset-0 z-0">
+        <HeroCanvas landscapeType={landscapeType} />
+      </div>
 
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 gradient-hero pointer-events-none z-[1]" />
+      {/* Gradient overlays for readability */}
+      <div className="absolute inset-0 bg-gradient-to-b from-cream-100/80 via-cream-100/30 to-cream-100/70 pointer-events-none z-[1]" />
 
-      {/* Content */}
-      <div className="relative z-10 w-full">
+      {/* Content - centered vertically with proper spacing */}
+      <div className="relative z-10 flex-1 flex items-center justify-center pt-24 pb-16">
         <DestinationSearch
           onSearch={handleSearch}
           onDestinationChange={handleDestinationChange}

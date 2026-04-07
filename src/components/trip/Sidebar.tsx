@@ -181,10 +181,10 @@ function TourCard({ tour }: { tour: ViatorTour }) {
 
 export default function Sidebar({ flights, hotels, tours }: SidebarProps) {
   return (
-    <aside className="lg:sticky lg:top-24">
-      <div className="bg-cream-50 rounded-2xl border border-cream-200 shadow-md overflow-hidden">
-        {/* Header band */}
-        <div className="bg-terracotta-500 px-5 py-4">
+    <aside className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)]">
+      <div className="bg-cream-50 rounded-2xl border border-cream-200 shadow-md overflow-hidden lg:flex lg:flex-col lg:max-h-[calc(100vh-6rem)]">
+        {/* Header band — stays fixed */}
+        <div className="bg-terracotta-500 px-5 py-4 shrink-0">
           <h2 className="font-serif text-heading-lg text-white mb-0.5">
             Book & Save
           </h2>
@@ -193,7 +193,8 @@ export default function Sidebar({ flights, hotels, tours }: SidebarProps) {
           </p>
         </div>
 
-        <div className="p-5">
+        {/* Scrollable content area — independent scroll */}
+        <div className="p-5 lg:overflow-y-auto lg:flex-1 overscroll-contain">
 
         {flights.length > 0 && (
           <SidebarSection title="Flights" icon={Plane}>
