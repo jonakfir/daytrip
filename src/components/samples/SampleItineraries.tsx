@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import Image from "next/image";
 
 interface Itinerary {
   destination: string;
@@ -8,7 +8,7 @@ interface Itinerary {
   days: number;
   tags: string[];
   highlights: string[];
-  gradient: string;
+  image: string;
   slug: string;
 }
 
@@ -24,7 +24,7 @@ const itineraries: Itinerary[] = [
       "Day trip to Mount Fuji",
       "Shibuya nightlife & izakaya crawl",
     ],
-    gradient: "from-red-600 via-rose-400 to-white",
+    image: "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=800&q=80",
     slug: "tokyo-japan",
   },
   {
@@ -38,7 +38,7 @@ const itineraries: Itinerary[] = [
       "Cliffside dinner in Positano",
       "Hidden beach exploration by boat",
     ],
-    gradient: "from-blue-500 via-sky-300 to-amber-200",
+    image: "https://images.unsplash.com/photo-1455587734955-081b22074882?w=800&q=80",
     slug: "amalfi-coast-italy",
   },
   {
@@ -52,7 +52,7 @@ const itineraries: Itinerary[] = [
       "Traditional riad cooking class",
       "Atlas Mountains day excursion",
     ],
-    gradient: "from-orange-600 via-amber-500 to-red-700",
+    image: "https://images.unsplash.com/photo-1489749798305-4fea3ae63d43?w=800&q=80",
     slug: "marrakech-morocco",
   },
 ];
@@ -60,27 +60,37 @@ const itineraries: Itinerary[] = [
 function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card hover:shadow-card-hover transition-shadow duration-500">
-      <div
-        className={cn(
-          "relative h-64 w-full overflow-hidden bg-gradient-to-br",
-          itinerary.gradient
-        )}
-      >
-        <div className="absolute inset-0 bg-black/10 group-hover:bg-black/5 transition-colors duration-500" />
+      {/* Real destination photo */}
+      <div className="relative h-64 w-full overflow-hidden">
+        <Image
+          src={itinerary.image}
+          alt={`${itinerary.destination}, ${itinerary.country}`}
+          fill
+          className="object-cover transition-transform duration-700 group-hover:scale-105"
+          sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+
+        {/* Duration badge */}
         <span className="absolute top-4 right-4 rounded-full bg-white/90 backdrop-blur-sm px-3 py-1 text-body-sm font-sans font-medium text-charcoal-900">
           {itinerary.days} days
         </span>
+
+        {/* Destination name overlay */}
+        <div className="absolute bottom-4 left-4">
+          <h3 className="font-serif text-heading-lg text-white drop-shadow-lg">
+            {itinerary.destination}
+          </h3>
+          <p className="font-sans text-body-sm text-white/80">
+            {itinerary.country}
+          </p>
+        </div>
       </div>
 
+      {/* Content */}
       <div className="flex flex-1 flex-col p-6">
-        <h3 className="font-serif text-heading-lg text-charcoal-900">
-          {itinerary.destination}
-        </h3>
-        <p className="mt-1 font-sans text-body-sm text-charcoal-800/60">
-          {itinerary.country}
-        </p>
-
-        <div className="mt-3 flex flex-wrap gap-2">
+        {/* Tags */}
+        <div className="flex flex-wrap gap-2">
           {itinerary.tags.map((tag) => (
             <span
               key={tag}
@@ -91,7 +101,8 @@ function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
           ))}
         </div>
 
-        <ul className="mt-5 flex-1 space-y-2">
+        {/* Highlights */}
+        <ul className="mt-4 flex-1 space-y-2">
           {itinerary.highlights.map((highlight) => (
             <li
               key={highlight}
@@ -103,6 +114,7 @@ function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
           ))}
         </ul>
 
+        {/* CTA */}
         <a
           href="/trip/demo"
           className="mt-6 inline-flex items-center gap-1.5 font-sans text-body-sm font-medium text-terracotta-500 transition-colors hover:text-terracotta-600"

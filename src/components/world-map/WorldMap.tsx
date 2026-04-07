@@ -83,7 +83,7 @@ function DestinationDot({ destination }: { destination: Destination }) {
 
 export default function WorldMap() {
   return (
-    <section className="bg-cream-100 py-24 px-6 md:px-12 lg:px-20 overflow-hidden">
+    <section className="bg-white py-24 px-6 md:px-12 lg:px-20 overflow-hidden">
       <div className="mx-auto max-w-6xl">
         <h2 className="text-center font-serif text-display text-charcoal-900 md:text-display-lg">
           Where Will You Go Next?
@@ -100,21 +100,21 @@ export default function WorldMap() {
             className="w-full h-auto"
           >
             {/* North America */}
-            <path d="M120,120 Q140,90 180,85 Q220,80 260,95 Q280,100 290,120 Q300,140 290,160 Q280,180 270,195 Q260,210 240,230 Q220,250 200,260 Q180,265 160,260 Q140,250 130,230 Q110,200 105,170 Q100,145 120,120Z" fill="#9BB59F" fillOpacity={0.25} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.5} />
+            <path d="M120,120 Q140,90 180,85 Q220,80 260,95 Q280,100 290,120 Q300,140 290,160 Q280,180 270,195 Q260,210 240,230 Q220,250 200,260 Q180,265 160,260 Q140,250 130,230 Q110,200 105,170 Q100,145 120,120Z" fill="#9BB59F" fillOpacity={0.35} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.7} />
             {/* Central America */}
-            <path d="M200,260 Q210,265 215,275 Q220,285 225,295 Q222,300 218,298 Q210,290 205,280 Q200,270 200,260Z" fill="#9BB59F" fillOpacity={0.25} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.5} />
+            <path d="M200,260 Q210,265 215,275 Q220,285 225,295 Q222,300 218,298 Q210,290 205,280 Q200,270 200,260Z" fill="#9BB59F" fillOpacity={0.35} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.7} />
             {/* South America */}
-            <path d="M240,295 Q260,285 280,290 Q300,295 310,310 Q315,330 310,355 Q305,375 295,390 Q280,405 265,400 Q250,390 240,370 Q230,350 225,330 Q220,310 240,295Z" fill="#9BB59F" fillOpacity={0.25} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.5} />
+            <path d="M240,295 Q260,285 280,290 Q300,295 310,310 Q315,330 310,355 Q305,375 295,390 Q280,405 265,400 Q250,390 240,370 Q230,350 225,330 Q220,310 240,295Z" fill="#9BB59F" fillOpacity={0.35} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.7} />
             {/* Europe */}
-            <path d="M440,110 Q460,100 480,105 Q500,110 515,120 Q530,130 525,145 Q520,160 510,170 Q500,180 485,185 Q470,188 455,185 Q440,180 435,165 Q430,150 432,135 Q435,120 440,110Z" fill="#9BB59F" fillOpacity={0.25} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.5} />
+            <path d="M440,110 Q460,100 480,105 Q500,110 515,120 Q530,130 525,145 Q520,160 510,170 Q500,180 485,185 Q470,188 455,185 Q440,180 435,165 Q430,150 432,135 Q435,120 440,110Z" fill="#9BB59F" fillOpacity={0.35} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.7} />
             {/* Africa */}
-            <path d="M455,210 Q475,200 500,205 Q520,210 535,225 Q545,240 550,260 Q555,285 548,310 Q540,335 530,355 Q520,370 505,375 Q490,378 475,370 Q460,360 452,340 Q445,320 442,295 Q440,270 443,245 Q448,225 455,210Z" fill="#9BB59F" fillOpacity={0.25} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.5} />
+            <path d="M455,210 Q475,200 500,205 Q520,210 535,225 Q545,240 550,260 Q555,285 548,310 Q540,335 530,355 Q520,370 505,375 Q490,378 475,370 Q460,360 452,340 Q445,320 442,295 Q440,270 443,245 Q448,225 455,210Z" fill="#9BB59F" fillOpacity={0.35} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.7} />
             {/* Asia */}
-            <path d="M540,100 Q570,85 610,80 Q650,78 690,85 Q720,90 745,105 Q760,115 770,130 Q778,150 775,170 Q770,190 755,205 Q740,215 720,220 Q700,225 675,222 Q650,220 625,225 Q600,230 580,225 Q560,220 545,205 Q535,190 530,170 Q528,145 540,100Z" fill="#9BB59F" fillOpacity={0.25} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.5} />
+            <path d="M540,100 Q570,85 610,80 Q650,78 690,85 Q720,90 745,105 Q760,115 770,130 Q778,150 775,170 Q770,190 755,205 Q740,215 720,220 Q700,225 675,222 Q650,220 625,225 Q600,230 580,225 Q560,220 545,205 Q535,190 530,170 Q528,145 540,100Z" fill="#9BB59F" fillOpacity={0.35} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.7} />
             {/* Southeast Asia */}
-            <path d="M680,260 Q700,255 720,260 Q740,265 755,275 Q760,285 750,295 Q740,305 720,308 Q700,310 685,305 Q672,298 670,285 Q668,272 680,260Z" fill="#9BB59F" fillOpacity={0.25} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.5} />
+            <path d="M680,260 Q700,255 720,260 Q740,265 755,275 Q760,285 750,295 Q740,305 720,308 Q700,310 685,305 Q672,298 670,285 Q668,272 680,260Z" fill="#9BB59F" fillOpacity={0.35} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.7} />
             {/* Australia */}
-            <path d="M730,330 Q760,320 790,325 Q820,330 840,345 Q850,360 845,378 Q838,395 820,400 Q800,405 780,400 Q760,395 745,380 Q732,365 728,350 Q726,340 730,330Z" fill="#9BB59F" fillOpacity={0.25} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.5} />
+            <path d="M730,330 Q760,320 790,325 Q820,330 840,345 Q850,360 845,378 Q838,395 820,400 Q800,405 780,400 Q760,395 745,380 Q732,365 728,350 Q726,340 730,330Z" fill="#9BB59F" fillOpacity={0.35} stroke="#9BB59F" strokeWidth={1} strokeOpacity={0.7} />
 
             {/* Destination dots */}
             {destinations.map((dest) => (
