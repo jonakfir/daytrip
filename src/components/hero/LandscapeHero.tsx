@@ -67,17 +67,20 @@ export default function LandscapeHero() {
 
   return (
     <section id="plan" className="bg-cream-100">
-      {/* 3D Canvas band — non-overlapping, sits at the top */}
-      <div className="relative h-[35vh] min-h-[200px] overflow-hidden">
+      {/* 3D Canvas — taller, with smooth gradient fades on all edges */}
+      <div className="relative h-[50vh] min-h-[300px] overflow-hidden">
         <HeroCanvas landscapeType={landscapeType} />
-        {/* Bottom fade so canvas blends into the content area */}
-        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-cream-100 to-transparent pointer-events-none" />
-        {/* Top fade for navbar readability */}
-        <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-cream-100/70 to-transparent pointer-events-none" />
+        {/* Smooth fade on all edges so the landscape floats naturally */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: `
+            linear-gradient(to bottom, rgba(253,246,236,0.6) 0%, transparent 20%, transparent 60%, rgba(253,246,236,1) 100%),
+            linear-gradient(to right, rgba(253,246,236,0.5) 0%, transparent 15%, transparent 85%, rgba(253,246,236,0.5) 100%)
+          `
+        }} />
       </div>
 
-      {/* Search form — always visible, rendered BELOW the canvas, pulled up to overlap slightly */}
-      <div className="relative -mt-16 pb-16 px-4">
+      {/* Search form — overlaps the bottom of the canvas for a layered look */}
+      <div className="relative -mt-24 pb-16 px-4">
         <DestinationSearch
           onSearch={handleSearch}
           onDestinationChange={handleDestinationChange}
