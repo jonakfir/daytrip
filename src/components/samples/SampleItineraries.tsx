@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface Itinerary {
@@ -58,22 +57,9 @@ const itineraries: Itinerary[] = [
   },
 ];
 
-function ItineraryCard({
-  itinerary,
-  index,
-}: {
-  itinerary: Itinerary;
-  index: number;
-}) {
+function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 60 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-50px" }}
-      transition={{ duration: 0.7, delay: index * 0.15, ease: "easeOut" }}
-      className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card hover:shadow-card-hover transition-shadow duration-500"
-    >
-      {/* Image placeholder */}
+    <div className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card hover:shadow-card-hover transition-shadow duration-500">
       <div
         className={cn(
           "relative h-64 w-full overflow-hidden bg-gradient-to-br",
@@ -81,14 +67,11 @@ function ItineraryCard({
         )}
       >
         <div className="absolute inset-0 bg-black/10 group-hover:bg-black/5 transition-colors duration-500" />
-
-        {/* Duration badge */}
         <span className="absolute top-4 right-4 rounded-full bg-white/90 backdrop-blur-sm px-3 py-1 text-body-sm font-sans font-medium text-charcoal-900">
           {itinerary.days} days
         </span>
       </div>
 
-      {/* Content */}
       <div className="flex flex-1 flex-col p-6">
         <h3 className="font-serif text-heading-lg text-charcoal-900">
           {itinerary.destination}
@@ -97,7 +80,6 @@ function ItineraryCard({
           {itinerary.country}
         </p>
 
-        {/* Tags */}
         <div className="mt-3 flex flex-wrap gap-2">
           {itinerary.tags.map((tag) => (
             <span
@@ -109,7 +91,6 @@ function ItineraryCard({
           ))}
         </div>
 
-        {/* Highlights */}
         <ul className="mt-5 flex-1 space-y-2">
           {itinerary.highlights.map((highlight) => (
             <li
@@ -122,30 +103,17 @@ function ItineraryCard({
           ))}
         </ul>
 
-        {/* CTA */}
         <a
           href="/trip/demo"
           className="mt-6 inline-flex items-center gap-1.5 font-sans text-body-sm font-medium text-terracotta-500 transition-colors hover:text-terracotta-600"
         >
           View itinerary
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            className="transition-transform group-hover:translate-x-0.5"
-          >
-            <path
-              d="M6 3l5 5-5 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="transition-transform group-hover:translate-x-0.5">
+            <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </a>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -157,17 +125,12 @@ export default function SampleItineraries() {
           Explore Sample Itineraries
         </h2>
         <p className="mx-auto mt-4 max-w-2xl text-center font-sans text-body-lg text-charcoal-800/60">
-          Get inspired by handcrafted journeys designed for the discerning
-          traveler.
+          Get inspired by handcrafted journeys designed for the discerning traveler.
         </p>
 
         <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {itineraries.map((itinerary, i) => (
-            <ItineraryCard
-              key={itinerary.slug}
-              itinerary={itinerary}
-              index={i}
-            />
+          {itineraries.map((itinerary) => (
+            <ItineraryCard key={itinerary.slug} itinerary={itinerary} />
           ))}
         </div>
       </div>
