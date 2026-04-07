@@ -227,37 +227,18 @@ export default function DestinationSearch({
   const isMultiCity = destinations.length > 1;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-      className="w-full max-w-2xl mx-auto px-4"
-    >
+    <div className="w-full max-w-2xl mx-auto px-4">
       {/* Heading */}
-      <motion.h1
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, delay: 0.1 }}
-        className="font-serif text-display-lg md:text-display-xl text-charcoal-900 text-center mb-3"
-      >
+      <h1 className="font-serif text-display-lg md:text-display-xl text-charcoal-900 text-center mb-3">
         Your journey begins
-      </motion.h1>
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.8, delay: 0.3 }}
-        className="text-body-lg text-charcoal-800/60 text-center mb-10"
-      >
+      </h1>
+      <p className="text-body-lg text-charcoal-800/60 text-center mb-10">
         Plan your perfect trip in seconds — powered by AI
-      </motion.p>
+      </p>
 
       {/* Search card */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, delay: 0.4 }}
-        className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-elevated p-6 md:p-8 space-y-5"
-      >
+      <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-elevated p-6 md:p-8 space-y-5">
+
         {/* Destination inputs */}
         <div className="space-y-3">
           {destinations.map((dest, index) => (
@@ -498,7 +479,7 @@ export default function DestinationSearch({
         <ShimmerButton onClick={handleSubmit} className="w-full">
           {isMultiCity ? 'Plan my multi-city trip' : 'Plan my trip'}
         </ShimmerButton>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 }
