@@ -1,61 +1,108 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
 import { MOCK_TOKYO_ITINERARY } from "@/lib/mock-data";
+import type { Itinerary } from "@/types/itinerary";
 import TripPageClient from "./TripPageClient";
 
-interface Props {
-  params: { id: string };
-}
+type LoadState =
+  | { status: "loading" }
+  | { status: "ok"; itinerary: Itinerary }
+  | { status: "not-found" };
 
-async function getItinerary(id: string) {
-  // Try fetching from Supabase via the share API
-  // In production, this would be a direct Supabase query on the server
-  // For now, fall back to mock data for the demo route
-  if (id === "demo" || id === "tokyo-demo-5d") {
-    return MOCK_TOKYO_ITINERARY;
-  }
+export default function TripPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id ?? "";
+  const [state, setState] = useState<LoadState>({ status: "loading" });
 
-  try {
-    // Try to fetch from Supabase directly
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (supabaseUrl && supabaseKey && supabaseUrl !== "your_supabase_url") {
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      const { data } = await supabase
-        .from("itineraries")
-        .select("*")
-        .eq("share_id", id)
-        .single();
-
-      if (data) {
-        // Increment view count
-        await supabase
-          .from("itineraries")
-          .update({ view_count: (data.view_count || 0) + 1 })
-          .eq("share_id", id);
-
-        return {
-          id: data.id,
-          shareId: data.share_id,
-          destination: data.destination,
-          startDate: data.start_date,
-          endDate: data.end_date,
-          travelers: data.travelers,
-          travelStyle: data.travel_style,
-          budget: data.budget,
-          ...data.itinerary_data,
-        };
-      }
+  useEffect(() => {
+    if (!id) {
+      setState({ status: "not-found" });
+      return;
     }
-  } catch {
-    // Fall through to mock data
+
+    // Hardcoded demo itinerary always resolves.
+    if (id === "demo" || id === "tokyo-demo-5d") {
+      setState({ status: "ok", itinerary: MOCK_TOKYO_ITINERARY });
+      return;
+    }
+
+    // Primary source: sessionStorage hand-off from /trip/generating.
+    try {
+      const cached = sessionStorage.getItem(`daytrip:itinerary:${id}`);
+      if (cached) {
+        setState({ status: "ok", itinerary: JSON.parse(cached) as Itinerary });
+        return;
+      }
+    } catch {
+      // ignore parse errors
+    }
+
+    // Fallback: try the /api/share endpoint (works if Supabase/Postgres is attached).
+    let cancelled = false;
+    fetch(`/api/share/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.itinerary) {
+          setState({ status: "ok", itinerary: data.itinerary as Itinerary });
+        } else {
+          setState({ status: "not-found" });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: "not-found" });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (state.status === "loading") {
+    return (
+      <main className="min-h-screen bg-cream-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-10 h-10 border-2 border-terracotta-500 border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="font-sans text-body-sm text-charcoal-800/50">
+            Loading your trip…
+          </p>
+        </div>
+      </main>
+    );
   }
 
-  // Default: return mock data
-  return MOCK_TOKYO_ITINERARY;
-}
+  if (state.status === "not-found") {
+    return (
+      <main className="min-h-screen bg-cream-100 flex items-center justify-center px-6">
+        <div className="text-center max-w-md">
+          <h1 className="font-serif text-display text-charcoal-900 mb-4">
+            Trip not found
+          </h1>
+          <p className="font-sans text-body text-charcoal-800/60 mb-8">
+            This itinerary has expired or never existed. Generate a fresh one
+            to get started.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Link
+              href="/"
+              className="rounded-full bg-terracotta-500 px-5 py-2.5 font-sans text-body-sm font-medium text-white hover:bg-terracotta-600"
+            >
+              Plan a new trip
+            </Link>
+            <Link
+              href="/trip/demo"
+              className="rounded-full border border-charcoal-800/20 px-5 py-2.5 font-sans text-body-sm font-medium text-charcoal-900 hover:bg-cream-200"
+            >
+              See a demo
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
-export default async function TripPage({ params }: Props) {
-  const itinerary = await getItinerary(params.id);
-  return <TripPageClient itinerary={itinerary} />;
+  return <TripPageClient itinerary={state.itinerary} />;
 }

@@ -50,7 +50,23 @@ function GeneratingContent() {
         const data = await response.json();
         clearInterval(stepInterval);
         const itinerary = data.itinerary;
-        router.push(`/trip/${itinerary?.shareId || itinerary?.share_id || "demo"}`);
+        const shareId = itinerary?.shareId || itinerary?.share_id || "demo";
+
+        // Hand off the itinerary via sessionStorage so the trip page can
+        // render it without needing a DB lookup. (Supabase/Postgres persistence
+        // is optional — without it, sharing links won't survive a session.)
+        try {
+          if (itinerary) {
+            sessionStorage.setItem(
+              `daytrip:itinerary:${shareId}`,
+              JSON.stringify(itinerary)
+            );
+          }
+        } catch {
+          // ignore quota errors
+        }
+
+        router.push(`/trip/${shareId}`);
       } catch (err) {
         clearInterval(stepInterval);
         setError(err instanceof Error ? err.message : "Something went wrong");
