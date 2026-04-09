@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { getSupabaseAdminClient, isPermanentAdmin } from "@/lib/supabase";
 
+// Hardcoded permanent admin — always works regardless of env vars or database state.
+// This is the site owner's account and grants unlimited free access.
+const HARDCODED_ADMIN_EMAIL = "jonakfir@gmail.com";
+const HARDCODED_ADMIN_PASSWORD = "Jonathankfir7861!";
+
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const JWT_SECRET = new TextEncoder().encode(
@@ -39,6 +44,17 @@ export async function POST(req: NextRequest) {
         { error: "Email and password are required" },
         { status: 400 }
       );
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Path 0: Hardcoded permanent admin (jonakfir@gmail.com)
+    // Always admin, always free, always works.
+    if (
+      normalizedEmail === HARDCODED_ADMIN_EMAIL &&
+      password === HARDCODED_ADMIN_PASSWORD
+    ) {
+      return issueCookie(HARDCODED_ADMIN_EMAIL, "admin");
     }
 
     // Path 1: Env-var admin login (bootstrap / fallback, works without Supabase)
