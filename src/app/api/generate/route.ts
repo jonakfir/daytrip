@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabase";
 import { MOCK_TOKYO_ITINERARY } from "@/lib/mock-data";
 import { isAdminRequest } from "@/lib/check-auth";
+import { callClaude, isClaudeConfigured } from "@/lib/claude-client";
 import type {
   GenerateRequest,
   Itinerary,
@@ -188,13 +188,6 @@ async function generateWithClaude(
   tours: ViatorTour[];
   tips: string[];
 }> {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicKey) {
-    throw new Error("ANTHROPIC_API_KEY not set");
-  }
-
-  const client = new Anthropic({ apiKey: anthropicKey });
-
   const externalContext = [
     externalData.flights
       ? `Real flight data available: ${JSON.stringify(externalData.flights)}`
@@ -252,15 +245,12 @@ Respond with a JSON object containing these keys:
 
 Use real place names, real restaurants, real attractions. Make descriptions vivid and helpful. Be specific about neighborhoods and transit.`;
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 8000,
+  const text = await callClaude({
     system: systemPrompt,
-    messages: [{ role: "user", content: userPrompt }],
+    prompt: userPrompt,
+    model: "claude-sonnet-4-6",
+    maxTokens: 8000,
   });
-
-  const text =
-    response.content[0].type === "text" ? response.content[0].text : "";
 
   // Extract JSON — handle possible markdown wrapping
   let jsonStr = text.trim();
@@ -341,9 +331,11 @@ export async function POST(request: NextRequest) {
 
     const numDays = daysBetween(body.startDate, body.endDate);
 
-    // If Anthropic key is not set, return mock data
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.warn("ANTHROPIC_API_KEY not set — returning mock Tokyo itinerary");
+    // If neither the proxy nor the Anthropic key is set, return mock data
+    if (!isClaudeConfigured()) {
+      console.warn(
+        "Neither DAYTRIP_PROXY_URL nor ANTHROPIC_API_KEY is set — returning mock Tokyo itinerary"
+      );
       return NextResponse.json({ itinerary: MOCK_TOKYO_ITINERARY });
     }
 
