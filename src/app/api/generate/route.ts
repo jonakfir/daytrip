@@ -3,6 +3,11 @@ import { supabase } from "@/lib/supabase";
 import { MOCK_TOKYO_ITINERARY } from "@/lib/mock-data";
 import { isAdminRequest } from "@/lib/check-auth";
 import { callClaude, isClaudeConfigured } from "@/lib/claude-client";
+
+// Allow long Claude responses (up to 5 min) — the proxy calls Claude CLI
+// which can take 60-120s for complex itineraries.
+export const runtime = "nodejs";
+export const maxDuration = 300;
 import type {
   GenerateRequest,
   Itinerary,
