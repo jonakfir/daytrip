@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
-import { getSupabaseAdminClient, isPermanentAdmin } from "@/lib/supabase";
+import bcrypt from "bcryptjs";
+import { getUserByEmail, isDbConfigured } from "@/lib/db";
 
 // Hardcoded permanent admin — always works regardless of env vars or database state.
-// This is the site owner's account and grants unlimited free access.
 const HARDCODED_ADMIN_EMAIL = "jonakfir@gmail.com";
 const HARDCODED_ADMIN_PASSWORD = "Jonathankfir7861!";
 
@@ -15,7 +15,7 @@ const JWT_SECRET = new TextEncoder().encode(
 
 async function issueCookie(
   email: string,
-  role: string,
+  role: "user" | "admin",
   userId?: string
 ): Promise<NextResponse> {
   const token = await new SignJWT({ email, role, userId })
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     const normalizedEmail = email.toLowerCase().trim();
 
     // Path 0: Hardcoded permanent admin (jonakfir@gmail.com)
-    // Always admin, always free, always works.
+    // Always admin, always free, always works — no DB needed.
     if (
       normalizedEmail === HARDCODED_ADMIN_EMAIL &&
       password === HARDCODED_ADMIN_PASSWORD
@@ -57,59 +57,50 @@ export async function POST(req: NextRequest) {
       return issueCookie(HARDCODED_ADMIN_EMAIL, "admin");
     }
 
-    // Path 1: Env-var admin login (bootstrap / fallback, works without Supabase)
+    // Path 1: Env-var admin (backup, also no DB needed)
     if (
       ADMIN_EMAIL &&
       ADMIN_PASSWORD &&
-      email === ADMIN_EMAIL &&
+      normalizedEmail === ADMIN_EMAIL.toLowerCase() &&
       password === ADMIN_PASSWORD
     ) {
-      return issueCookie(email, "admin");
+      return issueCookie(normalizedEmail, "admin");
     }
 
-    // Path 2: Supabase user login
-    const admin = getSupabaseAdminClient();
-    if (!admin) {
+    // Path 2: Regular user login via Postgres
+    if (!isDbConfigured()) {
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
       );
     }
 
-    const { data, error } = await admin.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error || !data.user) {
+    const user = await getUserByEmail(normalizedEmail);
+    if (!user) {
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
       );
     }
 
-    // Determine role: permanent admin override OR profile.role
-    let role = "user";
-    if (isPermanentAdmin(email)) {
-      role = "admin";
-      await admin
-        .from("profiles")
-        .update({ role: "admin" })
-        .eq("id", data.user.id);
-    } else {
-      const { data: profile } = await admin
-        .from("profiles")
-        .select("role")
-        .eq("id", data.user.id)
-        .single();
-      if (profile?.role === "admin") role = "admin";
+    const passwordOk = await bcrypt.compare(password, user.password_hash);
+    if (!passwordOk) {
+      return NextResponse.json(
+        { error: "Invalid email or password" },
+        { status: 401 }
+      );
     }
 
-    return issueCookie(email, role, data.user.id);
+    // Enforce admin override: jonakfir@gmail.com is always admin regardless of DB state
+    const role: "user" | "admin" =
+      normalizedEmail === HARDCODED_ADMIN_EMAIL ? "admin" : user.role;
+
+    return issueCookie(user.email, role, user.id);
   } catch (e) {
     console.error("Login error:", e);
+    const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Internal server error", details: message },
       { status: 500 }
     );
   }

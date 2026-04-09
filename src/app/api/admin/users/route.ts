@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerAuth } from "@/lib/check-auth";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { isDbConfigured, listAllUsers, listRecentPayments } from "@/lib/db";
 
 export async function GET(_req: NextRequest) {
   const auth = await getServerAuth();
@@ -8,55 +8,51 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const admin = getSupabaseAdminClient();
-  if (!admin) {
+  if (!isDbConfigured()) {
     return NextResponse.json({
       users: [],
+      payments: [],
       totalRevenue: 0,
       totalUsers: 0,
       configured: false,
-      message: "Supabase not configured. Add env vars to enable user tracking.",
+      message:
+        "Vercel Postgres not configured. Attach a Postgres database in the Vercel dashboard (Storage → Create Database → Postgres) and redeploy.",
     });
   }
 
-  const { data: profiles, error } = await admin
-    .from("profiles")
-    .select("id, email, full_name, role, total_paid_cents, plan, created_at")
-    .order("created_at", { ascending: false });
+  try {
+    const [users, payments] = await Promise.all([
+      listAllUsers(),
+      listRecentPayments(100),
+    ]);
 
-  if (error) {
+    const shaped = users.map((u) => ({
+      id: u.id,
+      email: u.email,
+      fullName: u.full_name,
+      role: u.role,
+      totalPaidCents: u.total_paid_cents,
+      plan: u.plan,
+      createdAt: u.created_at,
+    }));
+
+    const totalRevenue = shaped.reduce(
+      (sum, u) => sum + (u.totalPaidCents || 0),
+      0
+    );
+
+    return NextResponse.json({
+      users: shaped,
+      payments,
+      totalRevenue,
+      totalUsers: shaped.length,
+      configured: true,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to fetch users", detail: error.message },
+      { error: "Failed to fetch users", detail: message },
       { status: 500 }
     );
   }
-
-  const { data: payments } = await admin
-    .from("payments")
-    .select("id, user_id, amount_cents, currency, plan, status, created_at")
-    .order("created_at", { ascending: false })
-    .limit(100);
-
-  const users = (profiles || []).map((p) => ({
-    id: p.id,
-    email: p.email,
-    fullName: p.full_name,
-    role: p.role,
-    totalPaidCents: p.total_paid_cents,
-    plan: p.plan,
-    createdAt: p.created_at,
-  }));
-
-  const totalRevenue = users.reduce(
-    (sum, u) => sum + (u.totalPaidCents || 0),
-    0
-  );
-
-  return NextResponse.json({
-    users,
-    payments: payments || [],
-    totalRevenue,
-    totalUsers: users.length,
-    configured: true,
-  });
 }

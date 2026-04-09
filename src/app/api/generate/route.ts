@@ -253,7 +253,7 @@ Respond with a JSON object containing these keys:
 Use real place names, real restaurants, real attractions. Make descriptions vivid and helpful. Be specific about neighborhoods and transit.`;
 
   const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 8000,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
