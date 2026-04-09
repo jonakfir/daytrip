@@ -1,18 +1,55 @@
 "use client";
 
-import { useState } from "react";
-import type { Itinerary } from "@/types/itinerary";
+import { useCallback, useEffect, useState } from "react";
+import type { Activity, Itinerary } from "@/types/itinerary";
 import TripHero from "@/components/trip/TripHero";
 import DaySection from "@/components/trip/DaySection";
 import Sidebar from "@/components/trip/Sidebar";
 import SharePanel from "@/components/trip/SharePanel";
+import ChatPanel from "@/components/trip/ChatPanel";
 
 interface Props {
   itinerary: Itinerary;
 }
 
-export default function TripPageClient({ itinerary }: Props) {
+type TimeBlockKey = "morning" | "afternoon" | "evening";
+
+export default function TripPageClient({ itinerary: initialItinerary }: Props) {
+  const [itinerary, setItinerary] = useState<Itinerary>(initialItinerary);
   const [shareOpen, setShareOpen] = useState(false);
+
+  // Keep sessionStorage in sync so reloads get the updated version
+  useEffect(() => {
+    if (!itinerary?.shareId) return;
+    try {
+      sessionStorage.setItem(
+        `daytrip:itinerary:${itinerary.shareId}`,
+        JSON.stringify(itinerary)
+      );
+    } catch {
+      // ignore quota
+    }
+  }, [itinerary]);
+
+  const handleActivityChange = useCallback(
+    (
+      dayIndex: number,
+      block: TimeBlockKey,
+      activityIndex: number,
+      newActivity: Activity
+    ) => {
+      setItinerary((prev) => {
+        const nextDays = prev.days.map((day, di) => {
+          if (di !== dayIndex) return day;
+          const nextBlock = [...day[block]];
+          nextBlock[activityIndex] = newActivity;
+          return { ...day, [block]: nextBlock };
+        });
+        return { ...prev, days: nextDays };
+      });
+    },
+    []
+  );
 
   const dayCount = itinerary.days?.length || 0;
   const shareUrl =
@@ -59,9 +96,13 @@ export default function TripPageClient({ itinerary }: Props) {
             {/* Day sections */}
             {itinerary.days?.map((day, index) => (
               <DaySection
-                key={day.dayNumber}
+                key={`${day.dayNumber}-${day.date}`}
                 day={day}
                 isLast={index === itinerary.days.length - 1}
+                destination={itinerary.destination}
+                onActivityChange={(block, activityIndex, newActivity) =>
+                  handleActivityChange(index, block, activityIndex, newActivity)
+                }
               />
             ))}
 
@@ -90,6 +131,12 @@ export default function TripPageClient({ itinerary }: Props) {
         shareUrl={shareUrl}
         destination={itinerary.destination}
         duration={dayCount}
+      />
+
+      {/* Floating Claude chat for refining the itinerary */}
+      <ChatPanel
+        itinerary={itinerary}
+        onItineraryUpdate={(next) => setItinerary(next)}
       />
     </main>
   );

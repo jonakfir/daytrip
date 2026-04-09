@@ -11,7 +11,6 @@ import {
   Clock,
   ExternalLink,
   RefreshCw,
-  MapPin,
   Star,
   Footprints,
 } from "lucide-react";
@@ -63,42 +62,87 @@ const categoryConfig: Record<
 
 interface ActivityCardProps {
   activity: Activity;
+  destination?: string;
+  timeBlock?: "morning" | "afternoon" | "evening";
   onActivityChange?: (newActivity: Activity) => void;
 }
 
-export default function ActivityCard({ activity, onActivityChange }: ActivityCardProps) {
+export default function ActivityCard({
+  activity,
+  destination,
+  timeBlock,
+  onActivityChange,
+}: ActivityCardProps) {
   const [currentActivity, setCurrentActivity] = useState(activity);
   const [alternativeIndex, setAlternativeIndex] = useState(-1);
   const [isSwapping, setIsSwapping] = useState(false);
+  const [swapError, setSwapError] = useState<string | null>(null);
 
-  const config = categoryConfig[currentActivity.category];
-  const Icon = config.icon;
-  const hasAlternatives = activity.alternatives && activity.alternatives.length > 0;
+  const config = categoryConfig[currentActivity.category] ?? categoryConfig.culture;
 
-  const handleChange = () => {
-    if (!activity.alternatives || activity.alternatives.length === 0) return;
+  // Don't show the swap button on transport activities (they're fixed)
+  const showChangeButton = activity.category !== "transport";
 
-    setIsSwapping(true);
-    const nextIndex = (alternativeIndex + 1) % activity.alternatives.length;
-
-    setTimeout(() => {
-      const nextActivity = activity.alternatives![nextIndex];
-      setCurrentActivity({
-        ...nextActivity,
-        time: activity.time,
-        alternatives: activity.alternatives,
-      });
-      setAlternativeIndex(nextIndex);
-      onActivityChange?.({
-        ...nextActivity,
-        time: activity.time,
-        alternatives: activity.alternatives,
-      });
-      setIsSwapping(false);
-    }, 200);
+  const applyActivity = (next: Activity) => {
+    const merged: Activity = {
+      ...next,
+      time: activity.time,
+      alternatives: activity.alternatives,
+    };
+    setCurrentActivity(merged);
+    onActivityChange?.(merged);
   };
 
-  const currentConfig = categoryConfig[currentActivity.category];
+  const handleChange = async () => {
+    setSwapError(null);
+
+    // Fast path: cycle through local alternatives if present (demo data)
+    if (activity.alternatives && activity.alternatives.length > 0) {
+      setIsSwapping(true);
+      const nextIndex = (alternativeIndex + 1) % activity.alternatives.length;
+      setTimeout(() => {
+        applyActivity(activity.alternatives![nextIndex]);
+        setAlternativeIndex(nextIndex);
+        setIsSwapping(false);
+      }, 200);
+      return;
+    }
+
+    // Slow path: ask Claude for a replacement via the proxy
+    if (!destination) {
+      setSwapError("Can't swap — missing destination");
+      return;
+    }
+
+    setIsSwapping(true);
+    try {
+      const res = await fetch("/api/swap-activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activity: currentActivity,
+          destination,
+          timeBlock,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (!data?.activity) throw new Error("No activity returned");
+      applyActivity(data.activity);
+    } catch (e) {
+      setSwapError(
+        e instanceof Error ? e.message : "Swap failed. Try again."
+      );
+    } finally {
+      setIsSwapping(false);
+    }
+  };
+
+  const currentConfig =
+    categoryConfig[currentActivity.category] ?? categoryConfig.culture;
   const CurrentIcon = currentConfig.icon;
 
   return (
@@ -148,7 +192,9 @@ export default function ActivityCard({ activity, onActivityChange }: ActivityCar
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-2 mb-1">
-              <CurrentIcon className={cn("w-4 h-4 mt-1 shrink-0", currentConfig.color)} />
+              <CurrentIcon
+                className={cn("w-4 h-4 mt-1 shrink-0", currentConfig.color)}
+              />
               <h4 className="font-serif text-heading-lg text-charcoal-900 leading-tight">
                 {currentActivity.name}
               </h4>
@@ -196,24 +242,34 @@ export default function ActivityCard({ activity, onActivityChange }: ActivityCar
                 </a>
               )}
             </div>
+
+            {swapError && (
+              <p className="mt-2 ml-6 text-caption text-red-500 font-sans">
+                {swapError}
+              </p>
+            )}
           </div>
 
           {/* Change button */}
-          {hasAlternatives && (
+          {showChangeButton && (
             <div className="shrink-0 self-center">
               <button
                 onClick={handleChange}
+                disabled={isSwapping}
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg",
                   "text-caption font-sans font-medium",
                   "border border-cream-300 text-charcoal-800/60",
                   "hover:border-terracotta-500 hover:text-terracotta-500 hover:bg-terracotta-500/5",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
                   "transition-all duration-200"
                 )}
                 title="Swap for an alternative activity"
               >
-                <RefreshCw className={cn("w-3.5 h-3.5", isSwapping && "animate-spin")} />
-                Change
+                <RefreshCw
+                  className={cn("w-3.5 h-3.5", isSwapping && "animate-spin")}
+                />
+                {isSwapping ? "Swapping…" : "Change"}
               </button>
             </div>
           )}

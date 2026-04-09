@@ -6,9 +6,17 @@ import { cn } from "@/lib/utils";
 import type { DayPlan, Activity } from "@/types/itinerary";
 import ActivityCard from "./ActivityCard";
 
+type TimeBlockKey = "morning" | "afternoon" | "evening";
+
 interface DaySectionProps {
   day: DayPlan;
   isLast: boolean;
+  destination?: string;
+  onActivityChange?: (
+    block: TimeBlockKey,
+    activityIndex: number,
+    newActivity: Activity
+  ) => void;
 }
 
 function TimeBlock({
@@ -16,11 +24,21 @@ function TimeBlock({
   icon: Icon,
   activities,
   iconColor,
+  blockKey,
+  destination,
+  onActivityChange,
 }: {
   label: string;
   icon: typeof Sunrise;
   activities: Activity[];
   iconColor: string;
+  blockKey: TimeBlockKey;
+  destination?: string;
+  onActivityChange?: (
+    block: TimeBlockKey,
+    activityIndex: number,
+    newActivity: Activity
+  ) => void;
 }) {
   if (activities.length === 0) return null;
 
@@ -34,14 +52,27 @@ function TimeBlock({
       </div>
       <div className="flex flex-col gap-3 ml-1">
         {activities.map((activity, idx) => (
-          <ActivityCard key={`${activity.time}-${idx}`} activity={activity} />
+          <ActivityCard
+            key={`${blockKey}-${activity.time}-${idx}`}
+            activity={activity}
+            destination={destination}
+            timeBlock={blockKey}
+            onActivityChange={(newActivity) =>
+              onActivityChange?.(blockKey, idx, newActivity)
+            }
+          />
         ))}
       </div>
     </div>
   );
 }
 
-export default function DaySection({ day, isLast }: DaySectionProps) {
+export default function DaySection({
+  day,
+  isLast,
+  destination,
+  onActivityChange,
+}: DaySectionProps) {
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString("en-US", {
       weekday: "long",
@@ -79,18 +110,27 @@ export default function DaySection({ day, isLast }: DaySectionProps) {
           icon={Sunrise}
           activities={day.morning}
           iconColor="text-amber-500"
+          blockKey="morning"
+          destination={destination}
+          onActivityChange={onActivityChange}
         />
         <TimeBlock
           label="Afternoon"
           icon={Sun}
           activities={day.afternoon}
           iconColor="text-terracotta-400"
+          blockKey="afternoon"
+          destination={destination}
+          onActivityChange={onActivityChange}
         />
         <TimeBlock
           label="Evening"
           icon={Moon}
           activities={day.evening}
           iconColor="text-sage-600"
+          blockKey="evening"
+          destination={destination}
+          onActivityChange={onActivityChange}
         />
 
         {/* Divider with Tip */}
