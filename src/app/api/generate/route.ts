@@ -175,6 +175,66 @@ async function fetchUnsplashImage(
   }
 }
 
+/**
+ * Fetch a representative image from Wikipedia for a real place.
+ *
+ * Strategy: strip country suffix, try the primary name ("Tokyo, Japan" -> "Tokyo"),
+ * then fall back to the full string. Returns the high-res `originalimage.source`
+ * from Wikipedia's REST summary API. Requires no API key.
+ *
+ * Returns null for fake/nonexistent places since Wikipedia has no page for them.
+ */
+async function fetchWikipediaImage(
+  destination: string
+): Promise<string | null> {
+  const candidates = Array.from(
+    new Set(
+      [
+        destination.split(",")[0]?.trim(),
+        destination.trim(),
+      ].filter((s): s is string => !!s && s.length > 0)
+    )
+  );
+
+  for (const candidate of candidates) {
+    try {
+      const title = encodeURIComponent(candidate.replace(/\s+/g, "_"));
+      const res = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${title}`,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "Daytrip/1.0 (https://daytrip-five.vercel.app)",
+          },
+        }
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+
+      // Skip disambiguation pages
+      if (data.type === "disambiguation") continue;
+
+      // Prefer the full-resolution original, fall back to the thumb
+      const url: string | undefined =
+        data.originalimage?.source ?? data.thumbnail?.source;
+      if (url && url.startsWith("https://")) {
+        return url;
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return null;
+}
+
+/** Try Unsplash first (nicer photos), fall back to Wikipedia (free, no key). */
+async function fetchHeroImage(destination: string): Promise<string | null> {
+  const unsplash = await fetchUnsplashImage(destination);
+  if (unsplash) return unsplash;
+  return fetchWikipediaImage(destination);
+}
+
 // ── Claude itinerary generation ───────────────────────────────────────
 
 async function generateWithClaude(
@@ -328,7 +388,7 @@ export async function POST(request: NextRequest) {
       fetchAmadeusFlights(body.destination, body.startDate, body.endDate),
       fetchFoursquarePlaces(body.destination),
       fetchYelpRestaurants(body.destination),
-      fetchUnsplashImage(body.destination),
+      fetchHeroImage(body.destination),
     ]);
 
     // Generate itinerary with Claude
