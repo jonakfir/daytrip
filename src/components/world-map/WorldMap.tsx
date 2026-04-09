@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 
 interface Destination {
   name: string;
@@ -78,16 +79,33 @@ function DestinationDot({ destination }: { destination: Destination }) {
 
 export default function WorldMap() {
   return (
-    <section className="bg-white py-24 px-6 md:px-12 lg:px-20 overflow-hidden">
-      <div className="mx-auto max-w-6xl">
-        <h2 className="text-center font-serif text-display text-charcoal-900 md:text-display-lg">
-          Where Will You Go Next?
-        </h2>
-        <p className="mx-auto mt-4 max-w-2xl text-center font-sans text-body-lg text-charcoal-800/60">
-          Discover destinations loved by our travelers worldwide.
-        </p>
+    <section className="bg-white py-24 px-6 md:px-12 lg:px-20 overflow-hidden relative">
+      {/* Decorative blobs */}
+      <div className="absolute bottom-0 left-0 w-80 h-80 bg-terracotta-500/[0.03] rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-0 right-0 w-64 h-64 bg-sage-400/[0.03] rounded-full blur-3xl pointer-events-none" />
 
-        <div className="mt-16">
+      <div className="mx-auto max-w-6xl relative">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <h2 className="text-center font-serif text-display text-charcoal-900 md:text-display-lg">
+            Where Will You Go Next?
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-center font-sans text-body-lg text-charcoal-800/60">
+            Discover destinations loved by our travelers worldwide.
+          </p>
+        </motion.div>
+
+        <motion.div
+          className="mt-16"
+          initial={{ opacity: 0, scale: 0.95 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true, margin: "-60px" }}
+          transition={{ duration: 0.7, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        >
           <svg
             viewBox="0 0 900 450"
             fill="none"
@@ -135,7 +153,7 @@ export default function WorldMap() {
               <DestinationDot key={dest.name} destination={dest} />
             ))}
           </svg>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

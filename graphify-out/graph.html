@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>daytrip Knowledge Graph</title>
+<style>
+body { margin:0; background:#0a0a0a; font-family:system-ui; color:#fff; }
+svg { width:100vw; height:100vh; }
+.node { cursor:pointer; }
+.node circle { fill:#f59e0b; stroke:#fff3; stroke-width:1.5; }
+.node text { font-size:10px; fill:#fff; text-anchor:middle; }
+.link { stroke:#444; stroke-width:1; opacity:0.6; }
+h1 { position:fixed; top:10px; left:20px; font-size:18px; color:#f59e0b; z-index:10; }
+.stats { position:fixed; top:40px; left:20px; font-size:13px; color:#888; z-index:10; }
+</style>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+</head><body>
+<h1>daytrip Knowledge Graph</h1>
+<div class="stats">6 nodes, 11 edges</div>
+<svg></svg>
+<script>
+const nodes = [{"id": "page", "label": "page.tsx", "type": ""}, {"id": "page_showtoast", "label": "showToast()", "type": ""}, {"id": "worldmap", "label": "WorldMap.tsx", "type": ""}, {"id": "worldmap_destinationdot", "label": "DestinationDot()", "type": ""}, {"id": "landscapehero", "label": "LandscapeHero.tsx", "type": ""}, {"id": "landscapehero_mapdestinationtolandscape", "label": "mapDestinationToLandscape()", "type": ""}];
+const links = [{"source": "page", "target": "react"}, {"source": "page", "target": "navigation"}, {"source": "page", "target": "lucide_react"}, {"source": "page", "target": "page_showtoast"}, {"source": "worldmap", "target": "react"}, {"source": "worldmap", "target": "worldmap_destinationdot"}, {"source": "landscapehero", "target": "react"}, {"source": "landscapehero", "target": "navigation"}, {"source": "landscapehero", "target": "herocanvas"}, {"source": "landscapehero", "target": "destinationsearch"}, {"source": "landscapehero", "target": "landscapehero_mapdestinationtolandscape"}];
+const svg = d3.select("svg");
+const width = window.innerWidth, height = window.innerHeight;
+const sim = d3.forceSimulation(nodes)
+  .force("link", d3.forceLink(links).id(d=>d.id).distance(80))
+  .force("charge", d3.forceManyBody().strength(-200))
+  .force("center", d3.forceCenter(width/2, height/2));
+const link = svg.selectAll(".link").data(links).join("line").attr("class","link");
+const node = svg.selectAll(".node").data(nodes).join("g").attr("class","node")
+  .call(d3.drag().on("start",(e,d)=>{if(!e.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
+  .on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;}).on("end",(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}));
+node.append("circle").attr("r",8);
+node.append("text").text(d=>d.label).attr("dy",20);
+sim.on("tick",()=>{link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+node.attr("transform",d=>\`translate(\${d.x},\${d.y})\`);});
+</script></body></html>

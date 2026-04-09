@@ -65,6 +65,10 @@
     mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   }
+
+  .text-balance {
+    text-wrap: balance;
+  }
 }
 
 /* WebGL canvas */
