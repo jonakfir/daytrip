@@ -1,6 +1,14 @@
 "use client";
 
-import { Share2, Heart, Calendar, Users, Sparkles } from "lucide-react";
+import Link from "next/link";
+import {
+  Share2,
+  Heart,
+  Calendar,
+  Users,
+  Sparkles,
+  Plus,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -14,6 +22,27 @@ interface TripHeroProps {
   onShare?: () => void;
 }
 
+/** Inclusive day count — Oct 1 → Oct 4 = 4 days, not 3. Parses as local dates. */
+function computeDuration(start: string, end: string): number {
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const startDate = new Date(sy, (sm ?? 1) - 1, sd ?? 1);
+  const endDate = new Date(ey, (em ?? 1) - 1, ed ?? 1);
+  const ms = endDate.getTime() - startDate.getTime();
+  return Math.max(1, Math.round(ms / (1000 * 60 * 60 * 24)) + 1);
+}
+
+/** Format as "Oct 1, 2026" parsing as local date to avoid TZ drift. */
+function formatDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, (m ?? 1) - 1, d ?? 1);
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export default function TripHero({
   destination,
   startDate,
@@ -25,17 +54,7 @@ export default function TripHero({
 }: TripHeroProps) {
   const [isSaved, setIsSaved] = useState(false);
 
-  const duration = Math.ceil(
-    (new Date(endDate).getTime() - new Date(startDate).getTime()) /
-      (1000 * 60 * 60 * 24)
-  );
-
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+  const duration = computeDuration(startDate, endDate);
 
   return (
     <section
@@ -55,6 +74,17 @@ export default function TripHero({
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-charcoal-900 via-charcoal-900/95 to-terracotta-500" />
       )}
+
+      {/* Top nav — back to home to plan a new trip */}
+      <div className="absolute top-6 left-6 z-20">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/15 backdrop-blur-sm text-white font-sans text-caption font-medium hover:bg-white/25 transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          New trip
+        </Link>
+      </div>
 
       {/* Content */}
       <div className="relative z-10 w-full max-w-7xl mx-auto px-6 pb-12 pt-32">
@@ -103,9 +133,7 @@ export default function TripHero({
                 : "bg-white/15 backdrop-blur-sm text-white hover:bg-white/25"
             )}
           >
-            <Heart
-              className={cn("w-4 h-4", isSaved && "fill-current")}
-            />
+            <Heart className={cn("w-4 h-4", isSaved && "fill-current")} />
             {isSaved ? "Saved" : "Save"}
           </button>
         </div>

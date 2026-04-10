@@ -26,9 +26,15 @@ function generateShareId(): string {
 }
 
 function daysBetween(start: string, end: string): number {
-  const ms =
-    new Date(end).getTime() - new Date(start).getTime();
-  return Math.max(1, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+  // Parse as local dates (split avoids timezone drift from "YYYY-MM-DD" being
+  // interpreted as UTC midnight and falling back a day in negative timezones).
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const startDate = new Date(sy, (sm ?? 1) - 1, sd ?? 1);
+  const endDate = new Date(ey, (em ?? 1) - 1, ed ?? 1);
+  const ms = endDate.getTime() - startDate.getTime();
+  // Inclusive: Oct 1 → Oct 4 is 4 days (Oct 1, 2, 3, 4), not 3.
+  return Math.max(1, Math.round(ms / (1000 * 60 * 60 * 24)) + 1);
 }
 
 // ── External API helpers ──────────────────────────────────────────────
@@ -265,29 +271,16 @@ async function generateWithClaude(
       : "No Yelp data. Use your knowledge of real popular restaurants.",
   ].join("\n");
 
-  const systemPrompt = `Expert travel editor. Output ONLY valid JSON, no markdown, no prose. Use real place names and real restaurants.`;
+  const systemPrompt = `Travel editor. Output ONLY valid JSON, no prose, no markdown. Real places only.`;
 
-  const userPrompt = `${numDays}-day ${req.style} trip to ${req.destination} (${req.startDate} to ${req.endDate}, ${req.travelers} travelers, ${req.budget ?? "moderate"} budget).
+  const userPrompt = `${numDays} days in ${req.destination}. Dates ${req.startDate}–${req.endDate}. Style: ${req.style}.
 
-${externalContext}
+JSON shape:
+{"days":[{"dayNumber":1,"date":"YYYY-MM-DD","title":"short","morning":[Activity,Activity],"afternoon":[Activity,Activity],"evening":[Activity,Activity],"tip":"one tip"}],"hotels":[{"name":"","pricePerNight":"$X","rating":4.5,"bookingUrl":""},{"name":"","pricePerNight":"$X","rating":4.5,"bookingUrl":""},{"name":"","pricePerNight":"$X","rating":4.5,"bookingUrl":""}],"flights":[{"airline":"","departure":"","arrival":"","price":"$X","bookingUrl":"","stops":0},{"airline":"","departure":"","arrival":"","price":"$X","bookingUrl":"","stops":0}],"tours":[{"name":"","price":"$X","duration":"","rating":4.5,"bookingUrl":""},{"name":"","price":"$X","duration":"","rating":4.5,"bookingUrl":""},{"name":"","price":"$X","duration":"","rating":4.5,"bookingUrl":""}],"tips":["","","",""]}
 
-Return JSON with this exact shape:
-{
-  "days": [ { "dayNumber": 1, "date": "YYYY-MM-DD", "title": "string", "morning": [Activity], "afternoon": [Activity], "evening": [Activity], "tip": "string" } ],
-  "hotels": [ { "name": "string", "pricePerNight": "$X", "rating": 4.5, "bookingUrl": "string" } ],
-  "flights": [ { "airline": "string", "departure": "string", "arrival": "string", "price": "$X", "bookingUrl": "string", "stops": 0 } ],
-  "tours": [ { "name": "string", "price": "$X", "duration": "string", "rating": 4.5, "bookingUrl": "string" } ],
-  "tips": ["string"]
-}
+Activity={"time":"HH:MM","name":"real place","category":"food|culture|nature|shopping|entertainment|transport","description":"one short sentence","duration":"Xh"}
 
-Activity = { time: "HH:MM", name: string, category: "food"|"culture"|"shopping"|"nature"|"entertainment"|"transport", description: "1-2 sentences", duration: string, rating?: number, reviewCount?: number, distanceFromPrevious?: string, walkingTime?: string }
-
-Rules:
-- 3 activities per time block
-- Real place names only
-- 3 hotels, 2 flights, 3 tours, 5 tips
-- Group activities by geography per day
-- Keep descriptions concise`;
+Rules: 2 activities per block. Real ${req.destination} place names. Keep all text short.`;
 
   const text = await callClaude({
     system: systemPrompt,

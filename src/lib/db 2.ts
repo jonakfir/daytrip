@@ -3,9 +3,10 @@ import { sql } from "@vercel/postgres";
 /**
  * Vercel Postgres helper for user accounts + payments.
  *
- * Schema is created lazily on the first write — no migrations needed.
- * Vercel Postgres is configured by POSTGRES_URL which Vercel sets
- * automatically when you attach a Postgres database to the project.
+ * This replaces the old Supabase client for auth. The schema is created
+ * lazily on the first write — no migrations needed. Vercel Postgres is
+ * configured by the POSTGRES_URL env var which Vercel sets automatically
+ * when you attach a Postgres database to the project.
  */
 
 let schemaEnsured = false;
@@ -123,4 +124,34 @@ export async function listRecentPayments(
     SELECT * FROM payments ORDER BY created_at DESC LIMIT ${limit}
   `;
   return rows;
+}
+
+export async function recordPayment(params: {
+  userId: string;
+  amountCents: number;
+  currency?: string;
+  plan?: string | null;
+  stripePaymentId?: string | null;
+}): Promise<void> {
+  if (!isDbConfigured()) {
+    throw new Error("Database not configured");
+  }
+  await ensureSchema();
+  await sql`
+    INSERT INTO payments (user_id, amount_cents, currency, plan, stripe_payment_id)
+    VALUES (
+      ${params.userId},
+      ${params.amountCents},
+      ${params.currency ?? "usd"},
+      ${params.plan ?? null},
+      ${params.stripePaymentId ?? null}
+    )
+  `;
+  await sql`
+    UPDATE users
+    SET total_paid_cents = total_paid_cents + ${params.amountCents},
+        plan = COALESCE(${params.plan ?? null}, plan),
+        updated_at = now()
+    WHERE id = ${params.userId}
+  `;
 }

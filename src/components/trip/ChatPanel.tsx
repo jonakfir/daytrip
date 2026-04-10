@@ -58,11 +58,17 @@ export default function ChatPanel({ itinerary, onItineraryUpdate }: ChatPanelPro
     setInput("");
     setSending(true);
 
+    // Hard timeout: abort the fetch after 150s so the spinner can't hang
+    // forever if Claude CLI stalls upstream.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 150_000);
+
     try {
       const res = await fetch("/api/refine-itinerary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itinerary, message: trimmed }),
+        signal: controller.signal,
       });
       const data = await res.json();
 
@@ -81,8 +87,8 @@ export default function ChatPanel({ itinerary, onItineraryUpdate }: ChatPanelPro
         throw new Error(data?.error ?? `HTTP ${res.status}`);
       }
 
-      // Apply the updated itinerary if returned
-      if (data?.itinerary) {
+      // Apply the updated itinerary if returned AND it actually changed
+      if (data?.itinerary && !data?.unchanged) {
         onItineraryUpdate(data.itinerary as Itinerary);
       }
 
@@ -95,15 +101,19 @@ export default function ChatPanel({ itinerary, onItineraryUpdate }: ChatPanelPro
         },
       ]);
     } catch (e) {
+      const isAbort = e instanceof DOMException && e.name === "AbortError";
       setMessages((prev) => [
         ...prev,
         {
           id: `a-${Date.now()}`,
           role: "assistant",
-          text: `Sorry — ${e instanceof Error ? e.message : "something went wrong"}.`,
+          text: isAbort
+            ? "That took too long — Claude might be under load. Try again in a moment."
+            : `Sorry — ${e instanceof Error ? e.message : "something went wrong"}.`,
         },
       ]);
     } finally {
+      clearTimeout(timeoutId);
       setSending(false);
     }
   };

@@ -38,12 +38,10 @@ export async function getServerAuth(): Promise<AuthUser> {
 }
 
 /**
- * Check if a JWT cookie value represents an admin user.
- * For API routes that have direct cookie access via NextRequest.
+ * Check if request has admin auth (from cookie).
+ * For API routes that receive NextRequest.
  */
-export async function isAdminRequest(
-  cookieValue: string | undefined
-): Promise<boolean> {
+export async function isAdminRequest(cookieValue: string | undefined): Promise<boolean> {
   if (!cookieValue) return false;
   try {
     const { payload } = await jwtVerify(cookieValue, JWT_SECRET);

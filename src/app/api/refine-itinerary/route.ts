@@ -112,28 +112,67 @@ Update the days array accordingly. Keep activities not mentioned unchanged. Each
     const jsonMatch = text.match(/JSON:\s*([\s\S]+)/i);
 
     let reply = replyMatch?.[1]?.trim() ?? "Itinerary updated.";
-    let newDays = body.itinerary.days;
+    let newDays: typeof body.itinerary.days | null = null;
+    let parseError: string | null = null;
 
     if (jsonMatch) {
       try {
         const jsonStr = stripFences(jsonMatch[1]);
         const parsed = JSON.parse(jsonStr);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           newDays = parsed;
+        } else {
+          parseError = "Claude returned a non-array or empty days value";
         }
-      } catch (parseError) {
-        console.warn(
-          "Failed to parse refined days JSON:",
-          parseError instanceof Error ? parseError.message : parseError
-        );
-        // Fall back: try to extract JSON anywhere in the response
+      } catch (e) {
+        parseError = e instanceof Error ? e.message : "JSON parse failed";
+        // Fallback: try to find a bare JSON array anywhere in the response
         const bareJson = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
         if (bareJson) {
           try {
-            newDays = JSON.parse(bareJson[0]);
-          } catch {}
+            const parsed = JSON.parse(bareJson[0]);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              newDays = parsed;
+              parseError = null;
+            }
+          } catch {
+            // give up
+          }
         }
       }
+    } else {
+      // No JSON: try to find a bare array anywhere in the response
+      const bareJson = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (bareJson) {
+        try {
+          const parsed = JSON.parse(bareJson[0]);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            newDays = parsed;
+          }
+        } catch {
+          parseError = "No JSON section and no bare array found";
+        }
+      } else {
+        parseError = "Claude response missing JSON section";
+      }
+    }
+
+    // If parsing failed, tell the user we couldn't apply the change.
+    // This prevents the diverged-reply bug where the LLM says "I swapped X
+    // for Y" but the rendered itinerary never updates.
+    if (!newDays) {
+      console.warn(
+        "refine-itinerary parse failure:",
+        parseError,
+        "raw response:",
+        text.slice(0, 500)
+      );
+      return NextResponse.json({
+        reply:
+          "Hmm — I tried to make that change but couldn't. Can you rephrase or try a more specific request?",
+        itinerary: body.itinerary,
+        unchanged: true,
+      });
     }
 
     const updatedItinerary: Itinerary = {
