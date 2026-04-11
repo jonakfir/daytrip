@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { getFeaturedDestinations } from "@/lib/destinations";
 
 const productLinks = [
   { label: "Plan a Trip", href: "/#plan" },
+  { label: "Destinations", href: "/destinations" },
+  { label: "Travel Guides", href: "/guides" },
   { label: "Pricing", href: "/pricing" },
   { label: "Sample Trips", href: "/trip/demo" },
 ];
@@ -18,6 +21,8 @@ const legalLinks = [
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },
 ];
+
+const featuredDestinations = getFeaturedDestinations(12);
 
 const fadeIn = {
   hidden: { opacity: 0, y: 20 },
@@ -101,6 +106,36 @@ export default function Footer() {
               ))}
             </nav>
           </motion.div>
+        </motion.div>
+
+        {/* Popular destinations — internal linking for SEO crawlability */}
+        <motion.div
+          className="mt-12 pt-10 border-t border-cream-200/10"
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+        >
+          <h4 className="font-sans text-caption uppercase tracking-[0.15em] text-cream-200/40 mb-5">
+            Popular destinations
+          </h4>
+          <nav className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {featuredDestinations.map((d) => (
+              <Link
+                key={d.slug}
+                href={`/destinations/${d.slug}`}
+                className="font-sans text-body-sm text-cream-200/60 transition-colors duration-300 hover:text-cream-100"
+              >
+                {d.name}
+              </Link>
+            ))}
+          </nav>
+          <Link
+            href="/destinations"
+            className="mt-5 inline-block font-sans text-body-sm text-terracotta-400 hover:text-terracotta-500 transition-colors"
+          >
+            See all destinations →
+          </Link>
         </motion.div>
 
         {/* Divider */}

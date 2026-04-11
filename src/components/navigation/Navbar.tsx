@@ -7,8 +7,9 @@ import { Shield, User as UserIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
+  { label: "Destinations", href: "/destinations" },
+  { label: "Guides", href: "/guides" },
   { label: "How it works", href: "#how-it-works" },
-  { label: "Sample trips", href: "#samples" },
   { label: "Pricing", href: "/pricing" },
 ];
 

@@ -1,4 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "About Daytrip — AI-Powered Travel Itineraries",
+  description:
+    "Daytrip uses AI to create personalized, day-by-day travel itineraries that read like luxury travel magazines. Learn our mission, how it works, and why we exist.",
+  alternates: { canonical: "/about" },
+};
 
 export default function AboutPage() {
   return (
