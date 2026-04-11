@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getServerAuth } from "@/lib/check-auth";
 import { isDbConfigured } from "@/lib/db";
-import { resolveUserIdForAuth } from "../_shared";
+import { resolveUserIdForAuth } from "@/lib/auth-helpers";
 
 /**
  * GET /api/me/trips — list all trips the current user has planned.

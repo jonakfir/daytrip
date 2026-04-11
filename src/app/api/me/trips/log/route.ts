@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getServerAuth } from "@/lib/check-auth";
 import { isDbConfigured } from "@/lib/db";
-import { resolveUserIdForAuth } from "../../_shared";
+import { resolveUserIdForAuth } from "@/lib/auth-helpers";
 
 /**
  * POST /api/me/trips/log — record that the current user generated/viewed a
