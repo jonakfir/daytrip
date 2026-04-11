@@ -146,10 +146,10 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ url: session.url, id: session.id });
   } catch (e) {
+    // Log full error server-side; never leak details to the client.
     console.error("stripe checkout error:", e);
-    const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to create checkout session", details: message },
+      { error: "Failed to create checkout session" },
       { status: 500 }
     );
   }

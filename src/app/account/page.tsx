@@ -36,10 +36,15 @@ export default function AccountPage() {
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((j) => setMe(j));
+      .then((j) => setMe(j))
+      .catch(() => setMe({ authenticated: false, email: null, role: null, isAdmin: false }));
+    // /api/me/credits returns 401 for unauthenticated; only store the body
+    // when the response is 2xx so we don't pollute `credits` state with an
+    // {error:"Unauthorized"} object that breaks the render below.
     fetch("/api/me/credits")
-      .then((r) => r.json())
-      .then((j) => setCredits(j));
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setCredits(j))
+      .catch(() => setCredits(null));
   }, []);
 
   const buyTrip = async () => {

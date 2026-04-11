@@ -13,9 +13,7 @@ import type { Activity } from "@/types/itinerary";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "daytrip-secret-change-me-in-production"
-);
+import { JWT_SECRET } from "@/lib/jwt-secret";
 
 interface SwapRequest {
   activity: Activity;
