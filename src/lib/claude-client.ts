@@ -31,34 +31,72 @@ export interface ClaudeCallResult {
   usage: ClaudeUsage;
 }
 
-async function callProxy(opts: ClaudeCallOptions): Promise<ClaudeCallResult> {
-  const url = process.env.DAYTRIP_PROXY_URL!.replace(/\/$/, "");
-  const secret = process.env.DAYTRIP_PROXY_SECRET!;
+/** How long to wait for the proxy before giving up. The Cloudflare quick
+ *  tunnel can take a moment to wake on cold hits, so 60s gives margin for
+ *  a real itinerary chunk while still failing fast on a dead URL. */
+const PROXY_TIMEOUT_MS = 60_000;
 
-  const res = await fetch(`${url}/generate`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Daytrip-Secret": secret,
-    },
-    body: JSON.stringify({
-      system: opts.system,
-      prompt: opts.prompt,
-    }),
-  });
+async function callProxy(opts: ClaudeCallOptions): Promise<ClaudeCallResult> {
+  // .trim() defends against stray whitespace / trailing newlines in the
+  // DAYTRIP_PROXY_URL env var (Vercel sometimes preserves a literal \n).
+  const url = process.env
+    .DAYTRIP_PROXY_URL!.trim()
+    .replace(/\/$/, "");
+  const secret = process.env.DAYTRIP_PROXY_SECRET!.trim();
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${url}/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Daytrip-Secret": secret,
+      },
+      body: JSON.stringify({
+        system: opts.system,
+        prompt: opts.prompt,
+        // Forward the requested model + token cap so the proxy can call the
+        // right Claude model under the user's Max plan.
+        model: opts.model,
+        maxTokens: opts.maxTokens,
+      }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error(
+        `Proxy timeout after ${PROXY_TIMEOUT_MS / 1000}s — is the daytrip-proxy server running on your Mac?`
+      );
+    }
+    throw new Error(
+      `Proxy fetch failed: ${e instanceof Error ? e.message : String(e)} (URL: ${url})`
+    );
+  }
+  clearTimeout(timeoutId);
 
   if (!res.ok) {
-    const text = await res.text();
+    const text = await res.text().catch(() => "");
     throw new Error(
       `Proxy returned ${res.status}: ${text.slice(0, 300)}`
     );
   }
 
-  const data = (await res.json()) as {
+  let data: {
     text?: string;
     error?: string;
     usage?: { inputTokens?: number; outputTokens?: number; model?: string };
   };
+  try {
+    data = await res.json();
+  } catch (e) {
+    throw new Error(
+      `Proxy returned non-JSON: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
   if (data.error) throw new Error(`Proxy error: ${data.error}`);
   if (!data.text) throw new Error("Proxy returned no text");
   return {
@@ -72,7 +110,10 @@ async function callProxy(opts: ClaudeCallOptions): Promise<ClaudeCallResult> {
 }
 
 async function callSdk(opts: ClaudeCallOptions): Promise<ClaudeCallResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // .trim() defends against stray whitespace / newlines in the env var value
+  // (Vercel sometimes preserves a literal trailing \n which corrupts the
+  // Authorization header and surfaces as a generic "Connection error").
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
   const client = new Anthropic({ apiKey });
@@ -107,6 +148,9 @@ export function isClaudeConfigured(): boolean {
 /**
  * Call Claude. Tries the proxy first if configured, falls back to the SDK
  * on failure. Returns text + token usage so callers can compute cost.
+ *
+ * Both backends throw on failure with descriptive messages so the caller
+ * (and the user) can see exactly which one died.
  */
 export async function callClaudeWithUsage(
   opts: ClaudeCallOptions
@@ -114,12 +158,30 @@ export async function callClaudeWithUsage(
   if (isProxyConfigured()) {
     try {
       return await callProxy(opts);
-    } catch (e) {
-      console.warn(
-        "[claude-client] Proxy call failed, falling back to SDK:",
-        e instanceof Error ? e.message : e
-      );
-      if (!process.env.ANTHROPIC_API_KEY) throw e;
+    } catch (proxyErr) {
+      const proxyMsg =
+        proxyErr instanceof Error ? proxyErr.message : String(proxyErr);
+      console.warn("[claude-client] Proxy call failed:", proxyMsg);
+
+      if (!process.env.ANTHROPIC_API_KEY) {
+        // No SDK fallback configured — surface the proxy error so the
+        // user can fix it (start the proxy, refresh the tunnel URL, etc).
+        throw new Error(
+          `Claude proxy unavailable and ANTHROPIC_API_KEY is not set. Proxy error: ${proxyMsg}`
+        );
+      }
+
+      console.warn("[claude-client] Falling back to Anthropic SDK");
+      try {
+        return await callSdk(opts);
+      } catch (sdkErr) {
+        const sdkMsg =
+          sdkErr instanceof Error ? sdkErr.message : String(sdkErr);
+        console.error("[claude-client] SDK fallback also failed:", sdkMsg);
+        throw new Error(
+          `Both Claude backends failed. Proxy: ${proxyMsg}. SDK: ${sdkMsg}`
+        );
+      }
     }
   }
   return callSdk(opts);
