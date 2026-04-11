@@ -104,10 +104,13 @@ function FlightCard({
           </div>
         </div>
         <div className="text-right shrink-0">
-          <div className="font-serif text-heading text-charcoal-900">
+          <div className="font-serif text-heading text-charcoal-900 leading-none">
             {flight.price}
           </div>
-          <div className="text-[9px] font-sans text-charcoal-800/40 uppercase tracking-wide">
+          <div className="text-[10px] font-sans text-charcoal-800/50 mt-0.5">
+            / person
+          </div>
+          <div className="text-[9px] font-sans text-charcoal-800/40 uppercase tracking-wide mt-0.5">
             est.
           </div>
         </div>

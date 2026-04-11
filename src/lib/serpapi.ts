@@ -198,8 +198,15 @@ function mapOptionToFlight(
   const lastSeg = segs[segs.length - 1];
   if (!firstSeg) return null;
 
-  const price =
-    typeof opt.price === "number" ? `$${opt.price}` : "—";
+  // SerpAPI returns the TOTAL price for the entire party (we passed
+  // adults=body.travelers in the request). Divide back to per-person so
+  // every flight provider in our system speaks the same units.
+  const travelers = Math.max(1, body.travelers || 1);
+  const perPerson =
+    typeof opt.price === "number"
+      ? Math.round(opt.price / travelers)
+      : null;
+  const price = perPerson !== null ? `$${perPerson}` : "—";
 
   // Build the booking URL — SerpAPI returns a `booking_token` we COULD use
   // to fetch a Google Flights deep-link via a follow-up request, but each
