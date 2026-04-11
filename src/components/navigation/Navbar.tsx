@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence, useMotionValueEvent, useScroll } from "framer-motion";
 import Link from "next/link";
-import { Menu, Shield, User as UserIcon, X } from "lucide-react";
+import { Menu, Map as MapIcon, Shield, User as UserIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
@@ -121,6 +121,13 @@ export default function Navbar() {
                 </Link>
               )}
               <Link
+                href="/trips"
+                className="hidden sm:flex items-center gap-1.5 rounded-full bg-cream-200/60 px-3 py-1.5 font-sans text-caption font-medium text-charcoal-800/80 transition-colors hover:bg-cream-200"
+              >
+                <MapIcon className="w-3 h-3" />
+                My trips
+              </Link>
+              <Link
                 href="/account"
                 className="hidden sm:flex items-center gap-1.5 rounded-full bg-cream-200/60 px-3 py-1.5 font-sans text-caption font-medium text-charcoal-800/80 transition-colors hover:bg-cream-200"
               >
@@ -231,6 +238,14 @@ export default function Navbar() {
                         Admin
                       </Link>
                     )}
+                    <Link
+                      href="/trips"
+                      onClick={() => setMobileOpen(false)}
+                      className="flex items-center justify-center gap-2 rounded-full bg-cream-200 px-4 py-3 font-sans text-body-sm font-medium text-charcoal-800"
+                    >
+                      <MapIcon className="w-4 h-4" />
+                      My trips
+                    </Link>
                     <Link
                       href="/account"
                       onClick={() => setMobileOpen(false)}

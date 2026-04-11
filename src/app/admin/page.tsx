@@ -13,6 +13,9 @@ import {
   DollarSign,
   TrendingUp,
   Shield,
+  UserPlus,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 
 interface User {
@@ -48,6 +51,14 @@ export default function AdminPage() {
   // Dashboard data
   const [data, setData] = useState<DashboardData | null>(null);
   const [loadingData, setLoadingData] = useState(false);
+
+  // Add-user form state
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserCredits, setNewUserCredits] = useState<number>(5);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
   const checkAuth = async () => {
     try {
@@ -117,6 +128,42 @@ export default function AdminPage() {
     setData(null);
     setEmail("");
     setPassword("");
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError(null);
+    setCreateSuccess(null);
+    setCreating(true);
+    try {
+      const r = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newUserEmail,
+          password: newUserPassword,
+          tripCredits: newUserCredits,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) {
+        throw new Error(j.error || `Request failed (${r.status})`);
+      }
+      setCreateSuccess(
+        `Created ${j.user.email} with ${j.user.tripCredits} trip credits.`
+      );
+      setNewUserEmail("");
+      setNewUserPassword("");
+      setNewUserCredits(5);
+      // Refresh the user list
+      void loadDashboard();
+    } catch (err) {
+      setCreateError(
+        err instanceof Error ? err.message : "Could not create user"
+      );
+    } finally {
+      setCreating(false);
+    }
   };
 
   if (!authChecked) {
@@ -309,6 +356,100 @@ export default function AdminPage() {
             icon={<TrendingUp className="w-5 h-5" />}
             color="charcoal"
           />
+        </div>
+
+        {/* Add user form */}
+        <div className="bg-white rounded-3xl shadow-card p-6 md:p-8 mb-10">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="p-2 rounded-xl bg-terracotta-500/10 text-terracotta-500">
+              <UserPlus className="w-5 h-5" />
+            </div>
+            <h2 className="font-serif text-heading-lg text-charcoal-900">
+              Add a user
+            </h2>
+          </div>
+          <p className="font-sans text-caption text-charcoal-800/50 mb-6 ml-12">
+            Create an account with a starting trip-credit balance.
+          </p>
+
+          <form
+            onSubmit={handleCreateUser}
+            className="grid grid-cols-1 md:grid-cols-12 gap-3"
+          >
+            <div className="md:col-span-5">
+              <label className="block text-caption font-sans font-medium text-charcoal-800/70 mb-1.5">
+                Email
+              </label>
+              <input
+                type="email"
+                value={newUserEmail}
+                onChange={(e) => setNewUserEmail(e.target.value)}
+                placeholder="user@example.com"
+                required
+                className="w-full px-4 py-2.5 bg-cream-100 border border-cream-300 rounded-xl font-sans text-body-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500/50"
+              />
+            </div>
+            <div className="md:col-span-4">
+              <label className="block text-caption font-sans font-medium text-charcoal-800/70 mb-1.5">
+                Password
+              </label>
+              <input
+                type="text"
+                value={newUserPassword}
+                onChange={(e) => setNewUserPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                required
+                minLength={6}
+                className="w-full px-4 py-2.5 bg-cream-100 border border-cream-300 rounded-xl font-sans text-body-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500/50"
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-caption font-sans font-medium text-charcoal-800/70 mb-1.5">
+                Free trips
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={newUserCredits}
+                onChange={(e) => setNewUserCredits(parseInt(e.target.value, 10) || 0)}
+                required
+                className="w-full px-4 py-2.5 bg-cream-100 border border-cream-300 rounded-xl font-sans text-body-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500/50"
+              />
+            </div>
+
+            {createError && (
+              <div className="md:col-span-12 text-caption font-sans text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+                {createError}
+              </div>
+            )}
+            {createSuccess && (
+              <div className="md:col-span-12 flex items-center gap-2 text-caption font-sans text-sage-700 bg-sage-300/15 border border-sage-300/30 rounded-xl px-4 py-2.5">
+                <CheckCircle2 className="w-4 h-4" />
+                {createSuccess}
+              </div>
+            )}
+
+            <div className="md:col-span-12">
+              <button
+                type="submit"
+                disabled={creating}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-terracotta-500 hover:bg-terracotta-600 disabled:bg-terracotta-500/60 disabled:cursor-not-allowed text-white px-6 py-2.5 font-sans text-body-sm font-medium transition-colors"
+              >
+                {creating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    Create user
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
 
         {/* Users table */}

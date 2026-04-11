@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { MOCK_TOKYO_ITINERARY } from "@/lib/mock-data";
@@ -12,10 +12,48 @@ type LoadState =
   | { status: "ok"; itinerary: Itinerary }
   | { status: "not-found" };
 
+/**
+ * Best-effort log of the loaded itinerary to the user's library
+ * (POST /api/me/trips/log). Silent on auth/db errors — the trip view
+ * still works for anonymous users.
+ */
+async function logTripToLibrary(itinerary: Itinerary): Promise<void> {
+  try {
+    await fetch("/api/me/trips/log", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        shareId: itinerary.shareId,
+        destination: itinerary.destination,
+        startDate: itinerary.startDate,
+        endDate: itinerary.endDate,
+        travelers: itinerary.travelers,
+        travelStyle: itinerary.travelStyle,
+        budget: itinerary.budget,
+        days: itinerary.days?.length,
+      }),
+    });
+  } catch {
+    // ignore — best-effort logging
+  }
+}
+
 export default function TripPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const loggedRef = useRef<string | null>(null);
+
+  // When the itinerary is loaded for the first time, log it to the user's
+  // trip library. We track which shareId we've already logged so the call
+  // doesn't fire again on re-renders.
+  useEffect(() => {
+    if (state.status === "ok" && loggedRef.current !== state.itinerary.shareId) {
+      loggedRef.current = state.itinerary.shareId;
+      void logTripToLibrary(state.itinerary);
+    }
+  }, [state]);
 
   useEffect(() => {
     if (!id) {

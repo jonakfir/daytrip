@@ -9,6 +9,7 @@ export interface AuthUser {
   authenticated: boolean;
   role: string | null;
   email: string | null;
+  userId: string | null;
   isAdmin: boolean;
 }
 
@@ -22,7 +23,13 @@ export async function getServerAuth(): Promise<AuthUser> {
     const token = cookieStore.get("daytrip-auth")?.value;
 
     if (!token) {
-      return { authenticated: false, role: null, email: null, isAdmin: false };
+      return {
+        authenticated: false,
+        role: null,
+        email: null,
+        userId: null,
+        isAdmin: false,
+      };
     }
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
@@ -30,10 +37,17 @@ export async function getServerAuth(): Promise<AuthUser> {
       authenticated: true,
       role: (payload.role as string) || null,
       email: (payload.email as string) || null,
+      userId: (payload.userId as string) || null,
       isAdmin: payload.role === "admin",
     };
   } catch {
-    return { authenticated: false, role: null, email: null, isAdmin: false };
+    return {
+      authenticated: false,
+      role: null,
+      email: null,
+      userId: null,
+      isAdmin: false,
+    };
   }
 }
 
