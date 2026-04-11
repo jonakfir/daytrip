@@ -135,7 +135,10 @@ export async function fetchSerpApiFlights(
       return null;
     }
 
-    // Combine best + other flights, prefer best (cheapest curated by Google).
+    // Combine best + other flights. Google's `best_flights` is curated
+    // for the best price/duration tradeoff, but we want the user to be
+    // able to filter by stops, airline, price, etc — so return a wider
+    // pool (up to 12) and let the frontend filter client-side.
     const allOptions = [
       ...(data.best_flights ?? []),
       ...(data.other_flights ?? []),
@@ -148,8 +151,23 @@ export async function fetchSerpApiFlights(
       return null;
     }
 
-    // Take up to 3 cheapest
-    const top = allOptions.slice(0, 3);
+    // De-dup by airline + price + stops so the user doesn't see 3
+    // identical-looking entries from the same airline.
+    const seen = new Set<string>();
+    const deduped: SerpFlightOption[] = [];
+    for (const opt of allOptions) {
+      const segs = opt.flights ?? [];
+      const firstSeg = segs[0];
+      const key = `${firstSeg?.airline ?? "?"}|${opt.price ?? 0}|${segs.length - 1}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(opt);
+    }
+
+    // Sort by price ascending so cheapest is first; cap at 12.
+    deduped.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+    const top = deduped.slice(0, 12);
+
     const flights = top
       .map((opt) => mapOptionToFlight(opt, body, originIata, destIata))
       .filter((f): f is Flight => f !== null);
@@ -157,7 +175,7 @@ export async function fetchSerpApiFlights(
     if (flights.length === 0) return null;
 
     console.log(
-      `[serpapi] fetched ${flights.length} REAL flights for ${originIata} → ${destIata}, cheapest $${top[0].price}`
+      `[serpapi] fetched ${flights.length} REAL flights for ${originIata} → ${destIata}, cheapest $${top[0].price}, most expensive $${top[top.length - 1].price}`
     );
     return flights;
   } catch (e) {

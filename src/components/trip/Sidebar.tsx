@@ -73,9 +73,27 @@ function SidebarSection({
 
 // ─── Flight card (honest pricing) ─────────────────────────────────────
 
-function FlightCard({ flight }: { flight: Flight }) {
+function FlightCard({
+  flight,
+  isBestPrice,
+}: {
+  flight: Flight;
+  isBestPrice?: boolean;
+}) {
   return (
-    <div className="bg-white rounded-xl p-4 border border-cream-200 shadow-sm hover:shadow-md transition-shadow mb-3">
+    <div
+      className={cn(
+        "bg-white rounded-xl p-4 border shadow-sm hover:shadow-md transition-shadow mb-3 relative",
+        isBestPrice
+          ? "border-sage-400/60 ring-1 ring-sage-400/30"
+          : "border-cream-200"
+      )}
+    >
+      {isBestPrice && (
+        <div className="absolute -top-2 left-3 bg-sage-500 text-white text-[9px] font-sans font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
+          Best price
+        </div>
+      )}
       <div className="flex items-start justify-between mb-2 gap-3">
         <div className="flex-1 min-w-0">
           <div className="font-sans text-body-sm font-medium text-charcoal-900 truncate">
@@ -215,7 +233,7 @@ function parsePrice(priceStr: string): number | null {
 }
 
 type FlightFilterState = {
-  stops: "any" | "nonstop" | "1stop";
+  stops: "any" | "nonstop" | "1stop" | "2stop";
   airlines: Set<string>;
   maxPrice: number | null;
 };
@@ -279,27 +297,30 @@ export default function Sidebar({ flights, hotels, tours }: SidebarProps) {
     return prices.length ? Math.max(...prices) : 300;
   }, [tours]);
 
-  // Apply filters
+  // Apply filters AND sort cheapest first so the "Best price" badge always
+  // lands on the lowest-priced option in the visible list.
   const filteredFlights = useMemo(() => {
-    return flights.filter((f) => {
-      if (flightFilters.stops === "nonstop" && f.stops > 0) return false;
-      if (
-        flightFilters.stops === "1stop" &&
-        f.stops !== 0 &&
-        f.stops !== 1
-      )
-        return false;
-      if (
-        flightFilters.airlines.size > 0 &&
-        !flightFilters.airlines.has(f.airline)
-      )
-        return false;
-      if (flightFilters.maxPrice !== null) {
-        const p = parsePrice(f.price ?? "");
-        if (p !== null && p > flightFilters.maxPrice) return false;
-      }
-      return true;
-    });
+    return flights
+      .filter((f) => {
+        if (flightFilters.stops === "nonstop" && f.stops > 0) return false;
+        if (flightFilters.stops === "1stop" && f.stops > 1) return false;
+        if (flightFilters.stops === "2stop" && f.stops > 2) return false;
+        if (
+          flightFilters.airlines.size > 0 &&
+          !flightFilters.airlines.has(f.airline)
+        )
+          return false;
+        if (flightFilters.maxPrice !== null) {
+          const p = parsePrice(f.price ?? "");
+          if (p !== null && p > flightFilters.maxPrice) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const pa = parsePrice(a.price ?? "") ?? Infinity;
+        const pb = parsePrice(b.price ?? "") ?? Infinity;
+        return pa - pb;
+      });
   }, [flights, flightFilters]);
 
   const filteredHotels = useMemo(() => {
@@ -371,21 +392,25 @@ export default function Sidebar({ flights, hotels, tours }: SidebarProps) {
                 >
                   <FilterRow label="Stops">
                     <div className="flex gap-1.5 flex-wrap">
-                      {(["any", "nonstop", "1stop"] as const).map((opt) => (
-                        <Chip
-                          key={opt}
-                          active={flightFilters.stops === opt}
-                          onClick={() =>
-                            setFlightFilters((s) => ({ ...s, stops: opt }))
-                          }
-                        >
-                          {opt === "any"
-                            ? "Any"
-                            : opt === "nonstop"
-                            ? "Nonstop"
-                            : "Up to 1 stop"}
-                        </Chip>
-                      ))}
+                      {(["any", "nonstop", "1stop", "2stop"] as const).map(
+                        (opt) => (
+                          <Chip
+                            key={opt}
+                            active={flightFilters.stops === opt}
+                            onClick={() =>
+                              setFlightFilters((s) => ({ ...s, stops: opt }))
+                            }
+                          >
+                            {opt === "any"
+                              ? "Any"
+                              : opt === "nonstop"
+                                ? "Nonstop"
+                                : opt === "1stop"
+                                  ? "Up to 1 stop"
+                                  : "Up to 2 stops"}
+                          </Chip>
+                        )
+                      )}
                     </div>
                   </FilterRow>
 
@@ -444,7 +469,11 @@ export default function Sidebar({ flights, hotels, tours }: SidebarProps) {
                 <EmptyHint>No flights match your filters.</EmptyHint>
               ) : (
                 filteredFlights.map((flight, idx) => (
-                  <FlightCard key={idx} flight={flight} />
+                  <FlightCard
+                    key={idx}
+                    flight={flight}
+                    isBestPrice={idx === 0 && filteredFlights.length > 1}
+                  />
                 ))
               )}
             </SidebarSection>

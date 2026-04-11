@@ -156,8 +156,10 @@ export async function fetchTravelpayoutsFlights(
     try {
       const entries = await attempt.fn();
       if (entries && entries.length > 0) {
+        // Sort cheapest first, return up to 8 (frontend filters by stops/airline).
+        entries.sort((a, b) => a.price - b.price);
         const flights = entries
-          .slice(0, 3)
+          .slice(0, 8)
           .map((e) => mapEntryToFlight(e, body, marker, originIata, destIata));
         console.log(
           `[travelpayouts] ${attempt.label} returned ${flights.length} real flights for ${originIata} → ${destIata}, cheapest $${Math.round(entries[0].price)}`
