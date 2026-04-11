@@ -18,6 +18,7 @@ import {
   buildSkyscannerFlightUrl,
   buildSkyscannerHotelUrl,
 } from "@/lib/skyscanner";
+import { getAirportByIATA, searchAirports } from "@/lib/airports";
 
 import { JWT_SECRET } from "@/lib/jwt-secret";
 
@@ -73,17 +74,63 @@ function daysBetween(start: string, end: string): number {
 
 // ── External API helpers ──────────────────────────────────────────────
 
+/**
+ * Resolve a city name to its primary airport IATA code, using the static
+ * airports dataset shipped with the app. Falls back to scanning by city
+ * name for cases where the input is "Tokyo, Japan" or "New York City".
+ */
+function resolveIataForCity(cityOrAirport: string | undefined): string | null {
+  if (!cityOrAirport) return null;
+  const trimmed = cityOrAirport.trim();
+  // If the input is already a 3-letter IATA code, use it directly.
+  if (/^[A-Z]{3}$/i.test(trimmed)) {
+    const exact = getAirportByIATA(trimmed);
+    if (exact) return exact.iata;
+  }
+  // Strip "Tokyo, Japan" → "Tokyo" before searching
+  const cityOnly = trimmed.split(",")[0].trim();
+  const matches = searchAirports(cityOnly, 1);
+  return matches[0]?.iata ?? null;
+}
+
+/**
+ * Fetch real flight prices from Amadeus Self-Service API.
+ *
+ * Returns null if:
+ *   - AMADEUS_API_KEY / AMADEUS_API_SECRET aren't set
+ *   - We can't resolve origin or destination to a real IATA code
+ *   - The Amadeus call fails for any reason (we fall back gracefully)
+ *
+ * Returns [outbound, return] when both legs are available, or just
+ * [outbound] for one-way searches. Caller treats the second flight
+ * as the return leg in postProcessFlights / injectFlightAndAirportTransfers.
+ *
+ * Sign up at https://developers.amadeus.com (free, 2K calls/month).
+ */
 async function fetchAmadeusFlights(
-  destination: string,
-  startDate: string,
-  endDate: string
+  body: GenerateRequest
 ): Promise<Flight[] | null> {
-  const clientId = process.env.AMADEUS_API_KEY;
-  const clientSecret = process.env.AMADEUS_API_SECRET;
+  const clientId = process.env.AMADEUS_API_KEY?.trim();
+  const clientSecret = process.env.AMADEUS_API_SECRET?.trim();
   if (!clientId || !clientSecret) return null;
 
+  // Resolve real IATA codes from the user's inputs.
+  const originIata =
+    body.originAirport?.toUpperCase() ||
+    resolveIataForCity(body.originCity);
+  const destIata =
+    body.destinationAirport?.toUpperCase() ||
+    resolveIataForCity(body.destination);
+
+  if (!originIata || !destIata) {
+    console.warn(
+      `[amadeus] Could not resolve IATA codes — origin=${body.originCity ?? "?"} → ${originIata}, dest=${body.destination} → ${destIata}`
+    );
+    return null;
+  }
+
   try {
-    // Get OAuth token
+    // OAuth token request
     const tokenRes = await fetch(
       "https://test.api.amadeus.com/v1/security/oauth2/token",
       {
@@ -96,39 +143,81 @@ async function fetchAmadeusFlights(
         }),
       }
     );
-    if (!tokenRes.ok) return null;
+    if (!tokenRes.ok) {
+      console.warn(`[amadeus] OAuth failed: ${tokenRes.status}`);
+      return null;
+    }
     const { access_token } = await tokenRes.json();
 
-    // Search flights
+    // Real flight offers search
     const params = new URLSearchParams({
-      originLocationCode: "LAX",
-      destinationLocationCode: destination.substring(0, 3).toUpperCase(),
-      departureDate: startDate,
-      returnDate: endDate,
-      adults: "1",
-      max: "3",
+      originLocationCode: originIata,
+      destinationLocationCode: destIata,
+      departureDate: body.startDate,
+      returnDate: body.endDate,
+      adults: String(body.travelers || 1),
+      currencyCode: "USD",
+      max: "5",
     });
     const flightRes = await fetch(
       `https://test.api.amadeus.com/v2/shopping/flight-offers?${params}`,
       { headers: { Authorization: `Bearer ${access_token}` } }
     );
-    if (!flightRes.ok) return null;
+    if (!flightRes.ok) {
+      console.warn(`[amadeus] flight-offers failed: ${flightRes.status}`);
+      return null;
+    }
     const flightData = await flightRes.json();
+    const offers: unknown[] = flightData.data ?? [];
+    if (offers.length === 0) {
+      console.warn(`[amadeus] No flight offers for ${originIata} → ${destIata}`);
+      return null;
+    }
 
-    return (flightData.data ?? []).slice(0, 2).map(
-      (offer: Record<string, unknown>): Flight => {
-        const seg = (offer as any).itineraries?.[0]?.segments?.[0];
-        return {
-          airline: seg?.carrierCode ?? "Unknown",
-          departure: seg?.departure?.at ?? startDate,
-          arrival: seg?.arrival?.at ?? startDate,
-          price: `$${(offer as any).price?.total ?? "N/A"}`,
-          bookingUrl: "https://www.amadeus.com",
-          stops: ((offer as any).itineraries?.[0]?.segments?.length ?? 1) - 1,
-        };
-      }
+    // Convert Amadeus offers into our Flight shape. We treat each offer's
+    // first itinerary as the outbound and the second as the return leg.
+    const out: Flight[] = [];
+    const top = offers[0] as Record<string, unknown>;
+    const itineraries = (top as any).itineraries ?? [];
+    const totalPrice = (top as any).price?.total
+      ? `$${Number((top as any).price.total).toFixed(0)}`
+      : "—";
+
+    for (const itin of itineraries) {
+      const segs = (itin as any).segments ?? [];
+      const firstSeg = segs[0];
+      const lastSeg = segs[segs.length - 1];
+      if (!firstSeg) continue;
+      out.push({
+        airline: firstSeg.carrierCode ?? "—",
+        departure: firstSeg.departure?.at ?? body.startDate,
+        arrival: lastSeg?.arrival?.at ?? firstSeg.arrival?.at ?? body.startDate,
+        price: totalPrice,
+        stops: Math.max(0, segs.length - 1),
+        originAirport: firstSeg.departure?.iataCode ?? originIata,
+        destinationAirport:
+          lastSeg?.arrival?.iataCode ?? destIata,
+        bookingUrl: buildSkyscannerFlightUrl({
+          originCity: body.originCity,
+          destinationCity: body.destination,
+          startDate: body.startDate,
+          endDate: body.endDate,
+          travelers: body.travelers,
+          originAirport: firstSeg.departure?.iataCode ?? originIata,
+          destinationAirport:
+            lastSeg?.arrival?.iataCode ?? destIata,
+        }),
+      });
+    }
+    console.log(
+      `[amadeus] Fetched ${out.length} real flight legs for ${originIata} → ${destIata}: ${totalPrice}`
     );
-  } catch {
+    return out;
+  } catch (e) {
+    console.warn(
+      "[amadeus] flight fetch threw:",
+      e instanceof Error ? e.message : String(e)
+    );
     return null;
   }
 }
@@ -386,6 +475,7 @@ Rules:
 - Skip distance/walking on the first activity of each time block
 - For transport-category activities (airport, train, etc), omit distance fields
 - Keep descriptions short and specific
+- DO NOT include the arrival or departure flight, airport-to-hotel transfer, or hotel-to-airport transfer in any block — those are added separately by the system. Day 1 morning should start with the FIRST in-destination activity. The last day's evening should end with the LAST in-destination activity.
 
 GEOGRAPHY RULES (CRITICAL — NEVER VIOLATE):
 - Every single place must be PHYSICALLY LOCATED in ${req.destination}. Not "near", not "famous nationwide", not "in the same country". In the actual city limits or metro area of ${req.destination}.
@@ -647,6 +737,37 @@ function postProcessFlights(
   return out;
 }
 
+/**
+ * Pick the right flights to surface to the UI:
+ *   - If Amadeus returned real flight offers, USE THEM as-is (real prices,
+ *     real airline IATA codes, real bookable Skyscanner deep-links).
+ *   - Otherwise fall back to Claude's invented flight stubs but MASK the
+ *     fake price with "See live prices" so the user clicks through to
+ *     Skyscanner to see actual numbers instead of being misled by a
+ *     hallucinated dollar amount.
+ *
+ * Either way, the result is run through postProcessFlights so the
+ * Skyscanner URLs use the right pinned IATA codes from the user's airport
+ * autocomplete selection.
+ */
+function pickFlights(
+  body: GenerateRequest,
+  amadeus: Flight[] | null,
+  claudeFlights: Flight[]
+): Flight[] {
+  if (amadeus && amadeus.length > 0) {
+    // Real data — only re-stamp the Skyscanner URL via postProcessFlights
+    // to honor any pinned-airport overrides.
+    return postProcessFlights(body, amadeus);
+  }
+  // Claude-generated — mask the invented price.
+  const masked = claudeFlights.map((f) => ({
+    ...f,
+    price: "See live prices",
+  }));
+  return postProcessFlights(body, masked);
+}
+
 function postProcessHotels(body: GenerateRequest, hotels: Hotel[]): Hotel[] {
   return hotels.map((h) => ({
     ...h,
@@ -657,6 +778,170 @@ function postProcessHotels(body: GenerateRequest, hotels: Hotel[]): Hotel[] {
       travelers: body.travelers,
     }),
   }));
+}
+
+// ── Inject flight + airport-transfer activities into the day plan ────
+//
+// Travelers expect to see their actual journey reflected in the day-by-day:
+// the outbound flight + airport-to-hotel transfer at the start of Day 1,
+// and the hotel-to-airport transfer + return flight at the end of the last
+// day. We don't want Claude inventing flight times (the prompt now tells
+// it to skip these), so we synthesize the activities here from the booking
+// flights data + the user's origin/destination airport choices.
+
+function formatTimeFromIso(iso: string | undefined): string | null {
+  if (!iso) return null;
+  // Booking flights use ISO-ish strings like "2026-06-15T10:00".
+  const m = iso.match(/T(\d{1,2}:\d{2})/);
+  if (!m) return null;
+  // Pad to HH:MM
+  const [h, mm] = m[1].split(":");
+  return `${h.padStart(2, "0")}:${mm}`;
+}
+
+function subtractHoursFromTime(time: string, hours: number): string {
+  const [h, m] = time.split(":").map(Number);
+  let newH = h - hours;
+  if (newH < 0) newH = 0;
+  return `${String(newH).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function injectFlightAndAirportTransfers(
+  days: DayPlan[],
+  body: GenerateRequest,
+  flights: Flight[]
+): DayPlan[] {
+  if (days.length === 0) return days;
+
+  const cityName =
+    body.destination.split(",")[0]?.trim() || body.destination;
+  // Treat the first flight as outbound and the second (if any) as return.
+  // Claude often only generates outbound options; we synthesize the return.
+  const outbound = flights[0];
+  const returnFlight = flights[1];
+
+  const destAirportCode =
+    body.destinationAirport?.toUpperCase() || outbound?.destinationAirport;
+  const originAirportCode =
+    body.originAirport?.toUpperCase() || outbound?.originAirport;
+  const originLabel = body.originCity || originAirportCode || "your origin";
+  const destAirportLabel = destAirportCode
+    ? destAirportCode
+    : `${cityName} airport`;
+
+  // ─── Day 1: outbound flight + airport-to-hotel transfer ───
+  const day1 = days[0];
+  if (day1) {
+    const departureTime = formatTimeFromIso(outbound?.departure) || "08:00";
+    const arrivalTime = formatTimeFromIso(outbound?.arrival) || "11:00";
+
+    const flightActivity: Activity = {
+      time: departureTime,
+      name: outbound
+        ? `${outbound.airline} ${outbound.originAirport ?? originAirportCode ?? ""}${
+            outbound.destinationAirport
+              ? ` → ${outbound.destinationAirport}`
+              : ""
+          }`.trim()
+        : `Flight to ${cityName}`,
+      category: "transport",
+      description: outbound
+        ? `${outbound.airline} from ${originLabel}${
+            outbound.originAirport ? ` (${outbound.originAirport})` : ""
+          }, departing ${departureTime}, arriving ${arrivalTime} at ${destAirportLabel}.${
+            outbound.stops === 0
+              ? " Direct flight."
+              : outbound.stops
+                ? ` ${outbound.stops} stop${outbound.stops > 1 ? "s" : ""}.`
+                : ""
+          }`
+        : `Outbound flight from ${originLabel} to ${cityName}.`,
+      duration: outbound?.stops === 0 ? "Direct" : "Flight",
+      bookingUrl: outbound?.bookingUrl,
+      bookingPrice: outbound?.price,
+      distanceFromPrevious: "",
+      walkingTime: "",
+    };
+
+    const transferActivity: Activity = {
+      time: arrivalTime,
+      name: `Transfer from ${destAirportLabel} to your hotel`,
+      category: "transport",
+      description: `Pick up your bags, clear customs and immigration, then take a taxi, train, or pre-booked transfer (~30–60 minutes) from ${destAirportLabel} into central ${cityName} to drop your luggage at your hotel before the day begins.`,
+      duration: "1h",
+      distanceFromPrevious: "",
+      walkingTime: "",
+    };
+
+    day1.morning = [
+      flightActivity,
+      transferActivity,
+      ...(day1.morning || []),
+    ];
+  }
+
+  // ─── Last day: hotel-to-airport transfer + return flight ───
+  // Only inject if we have at least one day (which we already checked)
+  // and the trip isn't a single day (a 1-day trip would have outbound and
+  // return on the same Day 1, which we'd append to the same day's evening).
+  const lastDay = days[days.length - 1];
+  if (lastDay) {
+    const departureTime =
+      formatTimeFromIso(returnFlight?.departure) || "18:00";
+    const arrivalTime = formatTimeFromIso(returnFlight?.arrival);
+    // International travel typically wants you at the airport 3h before.
+    const transferTime = subtractHoursFromTime(departureTime, 3);
+
+    const transferBackActivity: Activity = {
+      time: transferTime,
+      name: `Transfer from your hotel to ${destAirportLabel}`,
+      category: "transport",
+      description: `Check out of your hotel and head to ${destAirportLabel}. Aim to arrive ~3 hours before your flight to allow for check-in, security, and any duty-free browsing.`,
+      duration: "1h",
+      distanceFromPrevious: "",
+      walkingTime: "",
+    };
+
+    const returnFlightActivity: Activity = {
+      time: departureTime,
+      name: returnFlight
+        ? `${returnFlight.airline} ${returnFlight.originAirport ?? destAirportCode ?? ""}${
+            returnFlight.destinationAirport
+              ? ` → ${returnFlight.destinationAirport}`
+              : ""
+          }`.trim()
+        : `Return flight from ${cityName}`,
+      category: "transport",
+      description: returnFlight
+        ? `${returnFlight.airline} from ${destAirportLabel}, departing ${departureTime}${
+            arrivalTime ? `, arriving ${arrivalTime}` : ""
+          }${
+            returnFlight.destinationAirport
+              ? ` at ${returnFlight.destinationAirport}`
+              : ""
+          }.${
+            returnFlight.stops === 0
+              ? " Direct flight."
+              : returnFlight.stops
+                ? ` ${returnFlight.stops} stop${returnFlight.stops > 1 ? "s" : ""}.`
+                : ""
+          }`
+        : `Return flight from ${cityName} back to ${originLabel}.`,
+      duration: returnFlight?.stops === 0 ? "Direct" : "Flight",
+      bookingUrl: returnFlight?.bookingUrl,
+      bookingPrice: returnFlight?.price,
+      distanceFromPrevious: "",
+      walkingTime: "",
+    };
+
+    lastDay.evening = [
+      ...(lastDay.evening || []),
+      transferBackActivity,
+      returnFlightActivity,
+    ];
+  }
+
+  return days;
 }
 
 export async function POST(request: NextRequest) {
@@ -759,11 +1044,17 @@ export async function POST(request: NextRequest) {
           shareId,
         });
 
-        // Kick off all 3 work streams in parallel:
+        // Kick off all 4 work streams in parallel:
         //   - hero image (Wikipedia, ~200ms)
+        //   - real flight prices (Amadeus, ~500-1500ms; null if not configured)
         //   - days array (Claude, ~10-15s)
-        //   - booking data (Claude, ~3-5s)
+        //   - booking data (Claude, ~3-5s) — used for hotels/tours/tips
+        //     and as a fallback for flights if Amadeus isn't configured
         const heroPromise = fetchHeroImage(body.destination);
+        const amadeusPromise = fetchAmadeusFlights(body).catch((e) => {
+          console.warn("[generate] Amadeus flights failed:", e);
+          return null;
+        });
         const daysPromise = generateDays(body, numDays, userId);
         const bookingPromise = generateBookingData(body, userId);
 
@@ -772,13 +1063,17 @@ export async function POST(request: NextRequest) {
           if (heroImage) send({ type: "hero", heroImage });
         });
 
-        // Booking usually finishes before days because the response is smaller
-        bookingPromise
-          .then((booking) => {
+        // Booking usually finishes before days because the response is smaller.
+        // Wait for Amadeus too so the flights array carries real prices when
+        // available; otherwise fall back to Claude's invented (but masked)
+        // flight stubs.
+        Promise.all([bookingPromise, amadeusPromise])
+          .then(([booking, amadeusFlights]) => {
+            const flightsForUi = pickFlights(body, amadeusFlights, booking.flights);
             send({
               type: "booking",
               hotels: postProcessHotels(body, booking.hotels),
-              flights: postProcessFlights(body, booking.flights),
+              flights: flightsForUi,
               tours: booking.tours,
               tips: booking.tips,
             });
@@ -788,7 +1083,7 @@ export async function POST(request: NextRequest) {
             send({
               type: "booking",
               hotels: [],
-              flights: postProcessFlights(body, []),
+              flights: pickFlights(body, null, []),
               tours: [],
               tips: [],
               error: e instanceof Error ? e.message : "booking failed",
@@ -796,8 +1091,9 @@ export async function POST(request: NextRequest) {
           });
 
         // Days finishes last
-        const [heroImage, days, booking] = await Promise.all([
+        const [heroImage, amadeusFlights, days, booking] = await Promise.all([
           heroPromise.catch(() => null),
+          amadeusPromise,
           daysPromise,
           bookingPromise.catch(() => ({
             hotels: [] as Hotel[],
@@ -807,7 +1103,20 @@ export async function POST(request: NextRequest) {
           })),
         ]);
 
-        send({ type: "days", days });
+        // Real flights (Amadeus) take priority over Claude's invented stubs.
+        const finalFlights = pickFlights(body, amadeusFlights, booking.flights);
+
+        // Inject the outbound flight + arrival transfer at the start of
+        // Day 1, and the return transfer + departure flight at the end of
+        // the last day. The day plan now reflects the full journey, not
+        // just the in-destination activities.
+        const daysWithTransport = injectFlightAndAirportTransfers(
+          days,
+          body,
+          finalFlights
+        );
+
+        send({ type: "days", days: daysWithTransport });
 
         // Final assembled itinerary
         const itinerary: Itinerary = {
@@ -819,9 +1128,9 @@ export async function POST(request: NextRequest) {
           travelers: body.travelers,
           travelStyle: body.style,
           budget: body.budget ?? "moderate",
-          days,
+          days: daysWithTransport,
           hotels: postProcessHotels(body, booking.hotels),
-          flights: postProcessFlights(body, booking.flights),
+          flights: finalFlights,
           tours: booking.tours,
           tips: booking.tips,
           heroImage: heroImage ?? undefined,
