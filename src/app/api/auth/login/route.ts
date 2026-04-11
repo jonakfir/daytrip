@@ -34,8 +34,18 @@ async function issueCookie(
 }
 
 export async function POST(req: NextRequest) {
+  let body: { email?: string; password?: string };
   try {
-    const { email, password } = await req.json();
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const { email, password } = body;
 
     if (!email || !password) {
       return NextResponse.json(

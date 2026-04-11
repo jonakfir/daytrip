@@ -28,8 +28,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
+  let body: {
+    shareId?: unknown;
+    destination?: unknown;
+    startDate?: unknown;
+    endDate?: unknown;
+    travelers?: unknown;
+    travelStyle?: unknown;
+    budget?: unknown;
+    days?: unknown;
+  };
   try {
-    const body = await req.json();
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
+
+  try {
     const shareId = String(body?.shareId || "").trim();
     const destination = String(body?.destination || "").trim();
     if (!shareId || !destination) {
