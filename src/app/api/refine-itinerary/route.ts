@@ -9,13 +9,10 @@ import { isAdminRequest } from "@/lib/check-auth";
 import { addClaudeUsage, hasClaudeBudget } from "@/lib/db";
 import { isPlaceInDestination } from "@/lib/verify-place";
 import type { Activity, Itinerary } from "@/types/itinerary";
+import { JWT_SECRET } from "@/lib/jwt-secret";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "daytrip-secret-change-me-in-production"
-);
 
 interface RefineRequest {
   itinerary: Itinerary;
@@ -68,7 +65,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body = (await req.json()) as RefineRequest;
+    let body: RefineRequest;
+    try {
+      body = (await req.json()) as RefineRequest;
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON body" },
+        { status: 400 }
+      );
+    }
     if (!body?.itinerary || !body?.message?.trim()) {
       return NextResponse.json(
         { error: "Missing itinerary or message" },

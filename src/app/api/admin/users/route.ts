@@ -27,8 +27,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let body: {
+    email?: unknown;
+    password?: unknown;
+    tripCredits?: unknown;
+    fullName?: unknown;
+  };
   try {
-    const body = await req.json();
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
+
+  try {
     const email = String(body?.email || "").trim().toLowerCase();
     const password = String(body?.password || "");
     const tripCreditsRaw = Number(body?.tripCredits ?? 1);

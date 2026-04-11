@@ -16,8 +16,17 @@ const MAX_NAME = 200;
 const MAX_MESSAGE = 5000;
 
 export async function POST(req: NextRequest) {
+  let body: { name?: unknown; email?: unknown; message?: unknown };
   try {
-    const body = await req.json();
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
+
+  try {
     const name = String(body?.name || "").trim();
     const email = String(body?.email || "").trim();
     const message = String(body?.message || "").trim();

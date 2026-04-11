@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { MOCK_TOKYO_ITINERARY } from "@/lib/mock-data";
 
 export async function GET(
   _request: NextRequest,
@@ -12,6 +13,12 @@ export async function GET(
       { error: "Missing share ID" },
       { status: 400 }
     );
+  }
+
+  // Always-available demo trip — used by the homepage Sample Trips section
+  // and the footer "Sample Trips" link. Doesn't require Supabase.
+  if (id === "demo" || id === "tokyo-demo-5d") {
+    return NextResponse.json({ itinerary: MOCK_TOKYO_ITINERARY });
   }
 
   if (!supabase) {
@@ -51,7 +58,11 @@ export async function GET(
         }
       });
 
-    return NextResponse.json({ itinerary: data.data });
+    // Schema column is `itinerary_data` (see migrations/001_initial_schema.sql);
+    // fall back to `data` for any legacy rows that were stored under the old key.
+    return NextResponse.json({
+      itinerary: data.itinerary_data ?? data.data,
+    });
   } catch (error) {
     console.error("Share lookup failed:", error);
     return NextResponse.json(

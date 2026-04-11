@@ -10,6 +10,7 @@ import {
 } from "@/lib/claude-client";
 import {
   addClaudeUsage,
+  addTripCredits,
   consumeTripCredit,
   isDbConfigured,
 } from "@/lib/db";
@@ -18,9 +19,7 @@ import {
   buildSkyscannerHotelUrl,
 } from "@/lib/skyscanner";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "daytrip-secret-change-me-in-production"
-);
+import { JWT_SECRET } from "@/lib/jwt-secret";
 
 interface JwtPayload {
   email?: string;
@@ -678,6 +677,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Parse + validate the body BEFORE consuming any credit. The previous
+  // order was the opposite, which meant a 400 (e.g. malformed JSON or
+  // missing destination) would silently burn the user's free credit.
+  let body: GenerateRequest;
+  try {
+    body = (await request.json()) as GenerateRequest;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.destination || !body.startDate || !body.endDate) {
+    return NextResponse.json(
+      { error: "Missing required fields: destination, startDate, endDate" },
+      { status: 400 }
+    );
+  }
+
   // For non-admin users, atomically consume one trip credit. If they have
   // none left, return 402 (Payment Required) with a hint to buy more.
   if (!isAdmin) {
@@ -705,25 +721,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  let body: GenerateRequest;
-  try {
-    body = (await request.json()) as GenerateRequest;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  if (!body.destination || !body.startDate || !body.endDate) {
-    return NextResponse.json(
-      { error: "Missing required fields: destination, startDate, endDate" },
-      { status: 400 }
-    );
-  }
-
-  // If neither the proxy nor the Anthropic key is set, return mock data
+  // If neither the proxy nor the Anthropic key is set, return mock data.
+  // Note: this also means we just consumed a credit for fake data — refund
+  // it so the user isn't penalized for a misconfigured backend.
   if (!isClaudeConfigured()) {
     console.warn(
       "Neither DAYTRIP_PROXY_URL nor ANTHROPIC_API_KEY is set — returning mock Tokyo itinerary"
     );
+    if (!isAdmin && userId) {
+      addTripCredits(userId, 1).catch(() => undefined);
+    }
     return NextResponse.json({ itinerary: MOCK_TOKYO_ITINERARY });
   }
 
@@ -828,6 +835,19 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.error("streaming generate failed:", e);
         const message = e instanceof Error ? e.message : "Unknown error";
+
+        // Refund the credit we consumed earlier — the user shouldn't be
+        // charged for a generation that crashed mid-stream. Admins are
+        // skipped because they don't consume credits in the first place.
+        if (!isAdmin && userId) {
+          addTripCredits(userId, 1).catch((refundErr) => {
+            console.error(
+              "[generate] failed to refund credit after stream error:",
+              refundErr
+            );
+          });
+        }
+
         try {
           controller.enqueue(
             new TextEncoder().encode(

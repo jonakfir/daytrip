@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "daytrip-secret-change-me-in-production"
-);
+import { JWT_SECRET } from "@/lib/jwt-secret";
 
 export async function GET(req: NextRequest) {
   const token = req.cookies.get("daytrip-auth")?.value;

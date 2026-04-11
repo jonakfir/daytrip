@@ -65,26 +65,35 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      // Credit the user with 1 trip
-      await addTripCredits(userId, 1);
-
-      // Record the payment + bump total_paid_cents
-      await sql`
+      // IDEMPOTENT: insert the payment row first. If the same session.id
+      // already exists (Stripe retried this webhook), the conflict clause
+      // skips the insert and rowCount === 0. Only when we successfully
+      // create a new payment row do we grant the credit and bump the
+      // total_paid counter — otherwise a retry would double-credit.
+      const ins = await sql`
         INSERT INTO payments (user_id, amount_cents, currency, plan, stripe_payment_id, status)
         VALUES (${userId}, ${amountCents}, ${currency}, 'per-trip', ${session.id}, 'succeeded')
         ON CONFLICT (stripe_payment_id) DO NOTHING
-      `;
-      await sql`
-        UPDATE users
-        SET total_paid_cents = total_paid_cents + ${amountCents}
-        WHERE id = ${userId}
+        RETURNING id
       `;
 
-      console.log(
-        `[stripe-webhook] credited 1 trip to user ${userId} ($${(
-          amountCents / 100
-        ).toFixed(2)})`
-      );
+      if (ins.rowCount === 1) {
+        await addTripCredits(userId, 1);
+        await sql`
+          UPDATE users
+          SET total_paid_cents = total_paid_cents + ${amountCents}
+          WHERE id = ${userId}
+        `;
+        console.log(
+          `[stripe-webhook] credited 1 trip to user ${userId} ($${(
+            amountCents / 100
+          ).toFixed(2)}) for session ${session.id}`
+        );
+      } else {
+        console.log(
+          `[stripe-webhook] duplicate delivery ignored for session ${session.id}`
+        );
+      }
     } catch (e) {
       console.error("Failed to credit user after payment:", e);
       // Return 500 so Stripe retries the webhook

@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import bcrypt from "bcryptjs";
 import { createUser, getUserByEmail, isDbConfigured } from "@/lib/db";
+import { JWT_SECRET } from "@/lib/jwt-secret";
 
 const HARDCODED_ADMIN_EMAIL = "jonakfir@gmail.com";
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "daytrip-secret-change-me-in-production"
-);
 
 function issueCookieResponse(
   email: string,
@@ -84,10 +82,11 @@ export async function POST(req: NextRequest) {
 
     return issueCookieResponse(user.email, user.role, user.id);
   } catch (e) {
+    // Log the full error server-side, but never leak the message to the
+    // client — it can contain stack frames, library versions, and DB hints.
     console.error("Signup error:", e);
-    const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
-      { error: "Signup failed", details: message },
+      { error: "Signup failed" },
       { status: 500 }
     );
   }

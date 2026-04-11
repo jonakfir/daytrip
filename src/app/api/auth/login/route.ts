@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import bcrypt from "bcryptjs";
 import { createUser, getUserByEmail, isDbConfigured } from "@/lib/db";
+import { JWT_SECRET } from "@/lib/jwt-secret";
 
 // Permanent admin email — pinned in code so the role survives DB resets.
 // The PASSWORD must come from the ADMIN_PASSWORD env var (set in Vercel).
@@ -9,9 +10,6 @@ const PERMANENT_ADMIN_EMAIL = "jonakfir@gmail.com";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "daytrip-secret-change-me-in-production"
-);
 
 async function issueCookie(
   email: string,
@@ -122,10 +120,11 @@ export async function POST(req: NextRequest) {
 
     return issueCookie(user.email, role, user.id);
   } catch (e) {
+    // Log the full error server-side, but never leak the message to the
+    // client — it can contain stack frames, library versions, and DB hints.
     console.error("Login error:", e);
-    const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
-      { error: "Internal server error", details: message },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

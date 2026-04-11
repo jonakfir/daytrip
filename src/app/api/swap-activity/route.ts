@@ -67,7 +67,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body = (await req.json()) as SwapRequest;
+    let body: SwapRequest;
+    try {
+      body = (await req.json()) as SwapRequest;
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON body" },
+        { status: 400 }
+      );
+    }
     if (!body?.activity || !body?.destination) {
       return NextResponse.json(
         { error: "Missing activity or destination" },
