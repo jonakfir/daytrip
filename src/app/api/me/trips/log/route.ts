@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getServerAuth } from "@/lib/check-auth";
 import { isDbConfigured } from "@/lib/db";
+import { resolveUserIdForAuth } from "../../_shared";
 
 /**
  * POST /api/me/trips/log — record that the current user generated/viewed a
@@ -13,10 +14,17 @@ import { isDbConfigured } from "@/lib/db";
  */
 export async function POST(req: NextRequest) {
   const auth = await getServerAuth();
-  if (!auth.authenticated || !auth.userId) {
+  if (!auth.authenticated) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isDbConfigured()) {
+    return NextResponse.json({ ok: true, skipped: true });
+  }
+
+  // Permanent admin path issues older cookies without a userId. Fall back to
+  // an email lookup so logged trips actually attach to the right user row.
+  const userId = await resolveUserIdForAuth(auth);
+  if (!userId) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
@@ -66,7 +74,7 @@ export async function POST(req: NextRequest) {
         travelers, travel_style, budget, days
       )
       VALUES (
-        ${auth.userId}, ${shareId}, ${destination}, ${startDate}, ${endDate},
+        ${userId}, ${shareId}, ${destination}, ${startDate}, ${endDate},
         ${travelers}, ${travelStyle}, ${budget}, ${days}
       )
       ON CONFLICT (user_id, share_id) DO NOTHING

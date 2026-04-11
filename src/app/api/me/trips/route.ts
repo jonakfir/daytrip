@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getServerAuth } from "@/lib/check-auth";
 import { isDbConfigured } from "@/lib/db";
+import { resolveUserIdForAuth } from "../_shared";
 
 /**
  * GET /api/me/trips — list all trips the current user has planned.
@@ -14,10 +15,20 @@ import { isDbConfigured } from "@/lib/db";
  */
 export async function GET() {
   const auth = await getServerAuth();
-  if (!auth.authenticated || !auth.userId) {
+  if (!auth.authenticated) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isDbConfigured()) {
+    return NextResponse.json({ trips: [] });
+  }
+
+  // Permanent admin path issues older cookies without a userId. Fall back to
+  // an email lookup so the user doesn't have to log out / back in.
+  const userId = await resolveUserIdForAuth(auth);
+  if (!userId) {
+    // Authenticated but we couldn't resolve a row — return empty (not 401),
+    // because the user is logged in, they just haven't generated any trips
+    // tracked under their account yet.
     return NextResponse.json({ trips: [] });
   }
 
@@ -55,7 +66,7 @@ export async function GET() {
       SELECT share_id, destination, start_date, end_date, travelers,
              travel_style, budget, days, created_at
       FROM user_trips
-      WHERE user_id = ${auth.userId}
+      WHERE user_id = ${userId}
       ORDER BY created_at DESC
       LIMIT 200
     `;

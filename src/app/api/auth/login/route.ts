@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import bcrypt from "bcryptjs";
-import { getUserByEmail, isDbConfigured } from "@/lib/db";
+import { createUser, getUserByEmail, isDbConfigured } from "@/lib/db";
 
 // Permanent admin email — pinned in code so the role survives DB resets.
 // The PASSWORD must come from the ADMIN_PASSWORD env var (set in Vercel).
@@ -56,7 +56,30 @@ export async function POST(req: NextRequest) {
       normalizedEmail === PERMANENT_ADMIN_EMAIL &&
       password === ADMIN_PASSWORD
     ) {
-      return issueCookie(PERMANENT_ADMIN_EMAIL, "admin");
+      // Try to attach a real Postgres userId so /api/me/trips and similar
+      // user-scoped endpoints have something to query against. Auto-creates
+      // the admin row on first login if it doesn't exist yet.
+      let adminUserId: string | undefined;
+      if (isDbConfigured()) {
+        try {
+          const existing = await getUserByEmail(PERMANENT_ADMIN_EMAIL);
+          if (existing) {
+            adminUserId = existing.id;
+          } else {
+            const created = await createUser({
+              email: PERMANENT_ADMIN_EMAIL,
+              fullName: null,
+              passwordHash: await bcrypt.hash(ADMIN_PASSWORD, 10),
+              role: "admin",
+            });
+            adminUserId = created.id;
+          }
+        } catch (e) {
+          // Non-fatal: the cookie still issues, just without a userId.
+          console.error("[login] could not resolve admin DB row:", e);
+        }
+      }
+      return issueCookie(PERMANENT_ADMIN_EMAIL, "admin", adminUserId);
     }
 
     // Path 1: Env-var admin alternate email (e.g. test@daytrip.app)

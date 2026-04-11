@@ -68,13 +68,18 @@ export default function HowItWorks() {
         </motion.div>
 
         <div className="relative mt-20">
-          {/* Connecting line — animated */}
+          {/* Connecting line — animated.
+              Anchored at 16% from each side so it lands inside the
+              first and third icon circles (which sit centered in their
+              third of the grid). The previous w-calc was a fixed-pixel
+              offset that overshot icon 3 on wider viewports. */}
           <motion.div
-            className="absolute left-1/2 top-12 hidden h-0.5 w-[calc(100%-12rem)] -translate-x-1/2 origin-left md:block"
+            className="absolute left-[16%] right-[16%] top-12 hidden h-0.5 origin-left md:block"
             variants={lineVariants}
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true }}
+            aria-hidden="true"
           >
             <div className="h-full w-full bg-gradient-to-r from-sage-300 via-sage-400 to-sage-300" />
           </motion.div>
