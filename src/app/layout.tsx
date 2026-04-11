@@ -82,6 +82,9 @@ export const metadata: Metadata = {
     icon: "/favicon.svg",
   },
   category: "travel",
+  verification: {
+    google: "3PVU1pfMWUHeT6fKw1DLdbIDmPEqF_m4o5zV9CJm1gU",
+  },
 };
 
 export default function RootLayout({
