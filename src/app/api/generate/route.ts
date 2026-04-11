@@ -19,6 +19,7 @@ import {
   buildSkyscannerHotelUrl,
 } from "@/lib/skyscanner";
 import { getAirportByIATA, searchAirports } from "@/lib/airports";
+import { fetchTravelpayoutsFlights } from "@/lib/travelpayouts";
 
 import { JWT_SECRET } from "@/lib/jwt-secret";
 
@@ -738,29 +739,35 @@ function postProcessFlights(
 }
 
 /**
- * Pick the right flights to surface to the UI:
- *   - If Amadeus returned real flight offers, USE THEM as-is (real prices,
- *     real airline IATA codes, real bookable Skyscanner deep-links).
- *   - Otherwise fall back to Claude's invented flight stubs but MASK the
- *     fake price with "See live prices" so the user clicks through to
- *     Skyscanner to see actual numbers instead of being misled by a
- *     hallucinated dollar amount.
+ * Pick the right flights to surface to the UI. Priority order:
  *
- * Either way, the result is run through postProcessFlights so the
- * Skyscanner URLs use the right pinned IATA codes from the user's airport
- * autocomplete selection.
+ *   1. **Travelpayouts** — real cached prices from Aviasales, includes
+ *      affiliate marker for revenue. Free, no per-call cost. Primary path.
+ *   2. **Amadeus** — real live prices from the Self-Service API. Being
+ *      decommissioned by Amadeus on 2026-07-17 but kept as a backstop
+ *      in case we have a key set.
+ *   3. **Claude masked stubs** — last-resort fallback when no real-data
+ *      provider is configured. Replaces the invented price with the
+ *      string "See live prices" so users aren't misled, then funnels
+ *      them through the Skyscanner deep-link for real numbers.
+ *
+ * The result of every path is run through postProcessFlights so the
+ * Skyscanner-fallback URL uses any pinned-airport overrides from the
+ * user's autocomplete selection.
  */
 function pickFlights(
   body: GenerateRequest,
+  travelpayouts: Flight[] | null,
   amadeus: Flight[] | null,
   claudeFlights: Flight[]
 ): Flight[] {
+  if (travelpayouts && travelpayouts.length > 0) {
+    return postProcessFlights(body, travelpayouts);
+  }
   if (amadeus && amadeus.length > 0) {
-    // Real data — only re-stamp the Skyscanner URL via postProcessFlights
-    // to honor any pinned-airport overrides.
     return postProcessFlights(body, amadeus);
   }
-  // Claude-generated — mask the invented price.
+  // No real-data provider configured — mask Claude's invented prices.
   const masked = claudeFlights.map((f) => ({
     ...f,
     price: "See live prices",
@@ -1044,13 +1051,18 @@ export async function POST(request: NextRequest) {
           shareId,
         });
 
-        // Kick off all 4 work streams in parallel:
+        // Kick off all 5 work streams in parallel:
         //   - hero image (Wikipedia, ~200ms)
-        //   - real flight prices (Amadeus, ~500-1500ms; null if not configured)
+        //   - real flight prices via Travelpayouts (~200ms; null if not configured)
+        //   - real flight prices via Amadeus (~500-1500ms; null if not configured)
         //   - days array (Claude, ~10-15s)
         //   - booking data (Claude, ~3-5s) — used for hotels/tours/tips
-        //     and as a fallback for flights if Amadeus isn't configured
+        //     and as a last-resort fallback for flights
         const heroPromise = fetchHeroImage(body.destination);
+        const travelpayoutsPromise = fetchTravelpayoutsFlights(body).catch((e) => {
+          console.warn("[generate] Travelpayouts flights failed:", e);
+          return null;
+        });
         const amadeusPromise = fetchAmadeusFlights(body).catch((e) => {
           console.warn("[generate] Amadeus flights failed:", e);
           return null;
@@ -1064,12 +1076,17 @@ export async function POST(request: NextRequest) {
         });
 
         // Booking usually finishes before days because the response is smaller.
-        // Wait for Amadeus too so the flights array carries real prices when
-        // available; otherwise fall back to Claude's invented (but masked)
-        // flight stubs.
-        Promise.all([bookingPromise, amadeusPromise])
-          .then(([booking, amadeusFlights]) => {
-            const flightsForUi = pickFlights(body, amadeusFlights, booking.flights);
+        // Wait for the flight providers too so the flights array carries real
+        // prices when available; otherwise fall back to Claude's invented
+        // (but masked) flight stubs.
+        Promise.all([bookingPromise, travelpayoutsPromise, amadeusPromise])
+          .then(([booking, tpFlights, amadeusFlights]) => {
+            const flightsForUi = pickFlights(
+              body,
+              tpFlights,
+              amadeusFlights,
+              booking.flights
+            );
             send({
               type: "booking",
               hotels: postProcessHotels(body, booking.hotels),
@@ -1083,7 +1100,7 @@ export async function POST(request: NextRequest) {
             send({
               type: "booking",
               hotels: [],
-              flights: pickFlights(body, null, []),
+              flights: pickFlights(body, null, null, []),
               tours: [],
               tips: [],
               error: e instanceof Error ? e.message : "booking failed",
@@ -1091,20 +1108,27 @@ export async function POST(request: NextRequest) {
           });
 
         // Days finishes last
-        const [heroImage, amadeusFlights, days, booking] = await Promise.all([
-          heroPromise.catch(() => null),
-          amadeusPromise,
-          daysPromise,
-          bookingPromise.catch(() => ({
-            hotels: [] as Hotel[],
-            flights: [] as Flight[],
-            tours: [] as ViatorTour[],
-            tips: [] as string[],
-          })),
-        ]);
+        const [heroImage, tpFlights, amadeusFlights, days, booking] =
+          await Promise.all([
+            heroPromise.catch(() => null),
+            travelpayoutsPromise,
+            amadeusPromise,
+            daysPromise,
+            bookingPromise.catch(() => ({
+              hotels: [] as Hotel[],
+              flights: [] as Flight[],
+              tours: [] as ViatorTour[],
+              tips: [] as string[],
+            })),
+          ]);
 
-        // Real flights (Amadeus) take priority over Claude's invented stubs.
-        const finalFlights = pickFlights(body, amadeusFlights, booking.flights);
+        // Real flights (Travelpayouts → Amadeus → Claude masked) priority chain.
+        const finalFlights = pickFlights(
+          body,
+          tpFlights,
+          amadeusFlights,
+          booking.flights
+        );
 
         // Inject the outbound flight + arrival transfer at the start of
         // Day 1, and the return transfer + departure flight at the end of
