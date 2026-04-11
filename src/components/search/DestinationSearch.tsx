@@ -294,39 +294,47 @@ export default function DestinationSearch({
             </div>
           )}
 
-          {/* Date + traveler + style row */}
+          {/* Date + traveler + style row.
+              IMPORTANT mobile notes:
+              - text-base = 16px is REQUIRED on date inputs. iOS Safari
+                auto-zooms any input with font-size < 16px on focus,
+                which janks the page and looks broken.
+              - No decorative absolute-positioned Calendar icon — iOS
+                renders its own native indicator inside the field and
+                a custom overlay collides with it. Show our icon only
+                next to the LABEL (above the field), where it can't
+                conflict with the native control.
+              - appearance-none + min-h-[44px] gives consistent height
+                across iOS / Android / desktop.
+          */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             {/* Start date */}
             <div className="relative md:col-span-1">
-              <label className="block font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+              <label className="flex items-center gap-1.5 font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+                <Calendar className="w-3.5 h-3.5" />
                 Start date
               </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30 pointer-events-none" />
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-cream-50 border border-cream-200 rounded-xl font-sans text-body-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500/40"
-                />
-              </div>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full appearance-none min-h-[44px] px-3 py-2.5 bg-cream-50 border border-cream-200 rounded-xl font-sans text-base text-charcoal-900 focus:outline-none focus:ring-2 focus:ring-terracotta-500/40"
+              />
             </div>
 
             {/* End date */}
             <div className="relative md:col-span-1">
-              <label className="block font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+              <label className="flex items-center gap-1.5 font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+                <Calendar className="w-3.5 h-3.5" />
                 End date
               </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30 pointer-events-none" />
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  min={startDate}
-                  className="w-full pl-9 pr-3 py-2.5 bg-cream-50 border border-cream-200 rounded-xl font-sans text-body-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500/40"
-                />
-              </div>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                min={startDate}
+                className="w-full appearance-none min-h-[44px] px-3 py-2.5 bg-cream-50 border border-cream-200 rounded-xl font-sans text-base text-charcoal-900 focus:outline-none focus:ring-2 focus:ring-terracotta-500/40"
+              />
             </div>
 
             {/* Travelers */}

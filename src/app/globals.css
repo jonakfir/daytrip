@@ -80,3 +80,44 @@
   height: 100%;
   z-index: 0;
 }
+
+/* ── Mobile date input fixes ───────────────────────────────────────
+   iOS Safari and some Android browsers render <input type="date">
+   with their own internal layout that ignores normal padding rules
+   and clips the value text to the right. These rules force the
+   value to render left-aligned, vertically centered, with the same
+   font as the rest of the form, and remove the right-side picker
+   indicator that overlaps the value text on iOS. */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  /* Ensure the displayed value isn't clipped or right-aligned on iOS */
+  -webkit-appearance: none;
+  appearance: none;
+  /* iOS uses a 16px minimum to avoid auto-zoom on focus */
+  font-size: 16px;
+  /* Match the rest of the form's typography */
+  line-height: 1.4;
+  /* Make sure the field can shrink in flex/grid containers without overflow */
+  min-width: 0;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  /* Left-align and vertically center the displayed value (iOS default
+     is right-aligned which crops the date on narrow inputs) */
+  text-align: left;
+  display: block;
+  min-height: 1.4em;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  /* iOS shows its own indicator INSIDE the field; nudge it so it
+     doesn't push the date text off-screen on narrow mobile widths */
+  margin-left: 4px;
+  cursor: pointer;
+  opacity: 0.5;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.8;
+}
