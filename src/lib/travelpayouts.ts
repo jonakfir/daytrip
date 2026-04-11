@@ -123,136 +123,167 @@ export async function fetchTravelpayoutsFlights(
     return null;
   }
 
-  try {
-    // Latest Prices endpoint — returns cached real prices for the route.
-    // beat=price means we sort by cheapest. period_type=year because the
-    // search may be a few months out and we want any cached entry that
-    // matches the date range.
-    const params = new URLSearchParams({
-      origin: originIata,
-      destination: destIata,
-      depart_date: body.startDate,
-      return_date: body.endDate,
-      currency: "usd",
-      limit: "5",
-      page: "1",
-      one_way: "false",
-      sorting: "price",
-      token,
-    });
+  // 4-tier fallback chain — Travelpayouts free-tier coverage is spotty
+  // (mostly US east coast → Europe), so we try multiple endpoints + the
+  // no-date variant to squeeze every cached entry the API has for the
+  // route. The first endpoint that returns ≥1 entry wins.
+  //
+  //   1. Calendar with dates → date-specific cached entries (best)
+  //   2. Latest with NO dates → any cached entry for the route
+  //   3. Cheap Flights with NO dates → broader cache, sometimes has more
+  //
+  // If none of them return data, return null and let the caller fall back
+  // to Claude masked stubs.
+  const attempts: Array<{
+    label: string;
+    fn: () => Promise<TravelpayoutsLatestPriceEntry[] | null>;
+  }> = [
+    {
+      label: "calendar",
+      fn: () => fetchCalendar(body, originIata, destIata, token),
+    },
+    {
+      label: "latest-nodate",
+      fn: () => fetchLatest(body, originIata, destIata, token),
+    },
+    {
+      label: "cheap-nodate",
+      fn: () => fetchCheap(body, originIata, destIata, token),
+    },
+  ];
 
-    const url = `https://api.travelpayouts.com/v2/prices/latest?${params}`;
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-    });
-
-    if (!res.ok) {
+  for (const attempt of attempts) {
+    try {
+      const entries = await attempt.fn();
+      if (entries && entries.length > 0) {
+        const flights = entries
+          .slice(0, 3)
+          .map((e) => mapEntryToFlight(e, body, marker, originIata, destIata));
+        console.log(
+          `[travelpayouts] ${attempt.label} returned ${flights.length} real flights for ${originIata} → ${destIata}, cheapest $${Math.round(entries[0].price)}`
+        );
+        return flights;
+      }
+    } catch (e) {
       console.warn(
-        `[travelpayouts] latest prices failed: ${res.status} ${res.statusText}`
+        `[travelpayouts] ${attempt.label} threw:`,
+        e instanceof Error ? e.message : String(e)
       );
-      return null;
     }
-
-    const data = (await res.json()) as {
-      success?: boolean;
-      data?: TravelpayoutsLatestPriceEntry[];
-    };
-
-    if (!data.success || !data.data || data.data.length === 0) {
-      console.warn(
-        `[travelpayouts] No latest-price entries for ${originIata} → ${destIata} on ${body.startDate}-${body.endDate}; trying cheap-flights endpoint`
-      );
-      // Fallback to the cheap-flights endpoint which has a wider matching
-      // tolerance on dates.
-      return await fetchTravelpayoutsCheap(body, originIata, destIata, token, marker);
-    }
-
-    const flights: Flight[] = data.data.slice(0, 3).map((entry) =>
-      mapEntryToFlight(entry, body, marker, originIata, destIata)
-    );
-
-    console.log(
-      `[travelpayouts] fetched ${flights.length} real flights for ${originIata} → ${destIata}, cheapest $${data.data[0].price}`
-    );
-    return flights;
-  } catch (e) {
-    console.warn(
-      "[travelpayouts] fetch threw:",
-      e instanceof Error ? e.message : String(e)
-    );
-    return null;
   }
+
+  console.warn(
+    `[travelpayouts] No real data for ${originIata} → ${destIata} from any endpoint`
+  );
+  return null;
 }
 
-/**
- * Cheap-flights endpoint — looser date matching than Latest Prices.
- * Used as a fallback when the strict-date Latest Prices returns nothing.
- */
-async function fetchTravelpayoutsCheap(
+async function fetchCalendar(
   body: GenerateRequest,
   originIata: string,
   destIata: string,
-  token: string,
-  marker: string | undefined
-): Promise<Flight[] | null> {
-  try {
-    const params = new URLSearchParams({
-      origin: originIata,
-      destination: destIata,
-      depart_date: body.startDate,
-      return_date: body.endDate,
-      currency: "usd",
-      token,
-    });
-    const res = await fetch(
-      `https://api.travelpayouts.com/v1/prices/cheap?${params}`,
-      { headers: { Accept: "application/json" } }
-    );
-    if (!res.ok) {
-      console.warn(
-        `[travelpayouts] cheap prices failed: ${res.status} ${res.statusText}`
-      );
-      return null;
+  token: string
+): Promise<TravelpayoutsLatestPriceEntry[] | null> {
+  const params = new URLSearchParams({
+    origin: originIata,
+    destination: destIata,
+    depart_date: body.startDate,
+    return_date: body.endDate,
+    currency: "usd",
+    token,
+  });
+  const res = await fetch(
+    `https://api.travelpayouts.com/v1/prices/calendar?${params}`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    success?: boolean;
+    data?: Record<string, TravelpayoutsLatestPriceEntry>;
+  };
+  if (!data.success || !data.data) return null;
+  const entries = Object.values(data.data).map((e) => ({
+    ...e,
+    origin: originIata,
+    destination: destIata,
+  }));
+  if (entries.length === 0) return null;
+  entries.sort((a, b) => a.price - b.price);
+  return entries;
+}
+
+async function fetchLatest(
+  body: GenerateRequest,
+  originIata: string,
+  destIata: string,
+  token: string
+): Promise<TravelpayoutsLatestPriceEntry[] | null> {
+  // Note: omitting depart_date so we get any cached entry for the route,
+  // not just exact-date matches. The Latest endpoint ignores the date
+  // filter on free tier anyway, so this is consistent behavior.
+  const params = new URLSearchParams({
+    origin: originIata,
+    destination: destIata,
+    currency: "usd",
+    limit: "5",
+    sorting: "price",
+    token,
+  });
+  const res = await fetch(
+    `https://api.travelpayouts.com/v2/prices/latest?${params}`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    success?: boolean;
+    // Latest v2 uses `value` instead of `price` for some entries
+    data?: Array<
+      TravelpayoutsLatestPriceEntry & { value?: number }
+    >;
+  };
+  if (!data.success || !data.data || data.data.length === 0) return null;
+  // Normalize value → price
+  return data.data.map((e) => ({
+    ...e,
+    price: e.price ?? e.value ?? 0,
+  })) as TravelpayoutsLatestPriceEntry[];
+}
+
+async function fetchCheap(
+  body: GenerateRequest,
+  originIata: string,
+  destIata: string,
+  token: string
+): Promise<TravelpayoutsLatestPriceEntry[] | null> {
+  const params = new URLSearchParams({
+    origin: originIata,
+    destination: destIata,
+    currency: "usd",
+    token,
+  });
+  const res = await fetch(
+    `https://api.travelpayouts.com/v1/prices/cheap?${params}`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    success?: boolean;
+    data?: Record<string, Record<string, TravelpayoutsLatestPriceEntry>>;
+  };
+  if (!data.success || !data.data) return null;
+  const entries: TravelpayoutsLatestPriceEntry[] = [];
+  for (const dest of Object.values(data.data)) {
+    for (const entry of Object.values(dest)) {
+      entries.push({
+        ...entry,
+        origin: originIata,
+        destination: destIata,
+      });
     }
-    const data = (await res.json()) as {
-      success?: boolean;
-      data?: Record<string, Record<string, TravelpayoutsLatestPriceEntry>>;
-    };
-    if (!data.success || !data.data) {
-      console.warn(`[travelpayouts] cheap returned no data`);
-      return null;
-    }
-    // Cheap response is keyed by destination → flight number → entry.
-    // Flatten into an array.
-    const entries: TravelpayoutsLatestPriceEntry[] = [];
-    for (const dest of Object.values(data.data)) {
-      for (const entry of Object.values(dest)) {
-        entries.push({
-          ...entry,
-          origin: originIata,
-          destination: destIata,
-        });
-      }
-    }
-    if (entries.length === 0) {
-      console.warn("[travelpayouts] cheap entries empty after flatten");
-      return null;
-    }
-    entries.sort((a, b) => a.price - b.price);
-    const flights = entries
-      .slice(0, 3)
-      .map((e) => mapEntryToFlight(e, body, marker, originIata, destIata));
-    console.log(
-      `[travelpayouts] cheap fallback returned ${flights.length} flights, cheapest $${entries[0].price}`
-    );
-    return flights;
-  } catch (e) {
-    console.warn(
-      "[travelpayouts] cheap fallback threw:",
-      e instanceof Error ? e.message : String(e)
-    );
-    return null;
   }
+  if (entries.length === 0) return null;
+  entries.sort((a, b) => a.price - b.price);
+  return entries;
 }
 
 function mapEntryToFlight(
