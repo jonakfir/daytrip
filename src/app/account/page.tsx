@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { LogOut, Mail, Shield, User as UserIcon } from "lucide-react";
+import {
+  LogOut,
+  Mail,
+  Shield,
+  User as UserIcon,
+  Ticket,
+  Plus,
+  Loader2,
+} from "lucide-react";
 
 interface Me {
   authenticated: boolean;
@@ -13,15 +21,47 @@ interface Me {
   isAdmin: boolean;
 }
 
+interface Credits {
+  authenticated: boolean;
+  credits: number; // -1 = unlimited
+  isAdmin: boolean;
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
+  const [credits, setCredits] = useState<Credits | null>(null);
+  const [buying, setBuying] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((j) => setMe(j));
+    fetch("/api/me/credits")
+      .then((r) => r.json())
+      .then((j) => setCredits(j));
   }, []);
+
+  const buyTrip = async () => {
+    setBuying(true);
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnTo: "/account" }),
+      });
+      const data = await res.json();
+      if (data?.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data?.message ?? data?.error ?? "Checkout failed");
+        setBuying(false);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Checkout failed");
+      setBuying(false);
+    }
+  };
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -92,6 +132,45 @@ export default function AccountPage() {
               label="Role"
               value={me.role || "user"}
             />
+          </div>
+
+          {/* Credits card */}
+          <div className="mb-8 rounded-2xl bg-gradient-to-br from-terracotta-500/10 to-sage-300/10 border border-cream-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-terracotta-500 text-white">
+                  <Ticket className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-sans text-caption text-charcoal-800/50 uppercase tracking-wider">
+                    Trip credits
+                  </div>
+                  <div className="font-serif text-heading-lg text-charcoal-900 mt-0.5">
+                    {credits === null
+                      ? "—"
+                      : credits.isAdmin
+                      ? "Unlimited"
+                      : `${credits.credits} credit${
+                          credits.credits === 1 ? "" : "s"
+                        }`}
+                  </div>
+                </div>
+              </div>
+              {credits && !credits.isAdmin && (
+                <button
+                  onClick={buyTrip}
+                  disabled={buying}
+                  className="flex items-center gap-1.5 rounded-full bg-terracotta-500 px-4 py-2 font-sans text-caption font-medium text-white hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
+                >
+                  {buying ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5" />
+                  )}
+                  Buy 1 trip — $3
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3 pt-6 border-t border-cream-200">

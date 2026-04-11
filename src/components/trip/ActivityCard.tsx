@@ -156,7 +156,7 @@ export default function ActivityCard({
             {currentActivity.walkingTime && (
               <>
                 <span className="mx-0.5">·</span>
-                <span>{currentActivity.walkingTime} walk</span>
+                <span>{currentActivity.walkingTime}</span>
               </>
             )}
           </div>

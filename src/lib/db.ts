@@ -31,10 +31,16 @@ export async function ensureSchema(): Promise<void> {
       role text NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
       total_paid_cents integer NOT NULL DEFAULT 0,
       plan text,
+      trip_credits integer NOT NULL DEFAULT 1,
+      total_trips_generated integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );
   `;
+  // Lazy migration: add columns if they don't exist (for existing rows)
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS trip_credits integer NOT NULL DEFAULT 1;`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS total_trips_generated integer NOT NULL DEFAULT 0;`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS current_credit_usage_cents integer NOT NULL DEFAULT 0;`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS payments (
@@ -63,6 +69,8 @@ export interface DbUser {
   role: "user" | "admin";
   total_paid_cents: number;
   plan: string | null;
+  trip_credits: number;
+  total_trips_generated: number;
   created_at: string;
   updated_at: string;
 }
@@ -123,4 +131,88 @@ export async function listRecentPayments(
     SELECT * FROM payments ORDER BY created_at DESC LIMIT ${limit}
   `;
   return rows;
+}
+
+// ── Trip credits ─────────────────────────────────────────────────────────
+
+/** Read the current trip_credits balance for a user. Null if not found. */
+export async function getTripCredits(userId: string): Promise<number | null> {
+  if (!isDbConfigured()) return null;
+  await ensureSchema();
+  const { rows } = await sql<{ trip_credits: number }>`
+    SELECT trip_credits FROM users WHERE id = ${userId} LIMIT 1
+  `;
+  return rows[0]?.trip_credits ?? null;
+}
+
+/**
+ * Atomically decrement trip_credits by 1 if > 0 AND reset the per-credit
+ * Claude usage counter for the new trip. Returns the new balance, or null
+ * if the user had no credits (denied) / doesn't exist.
+ */
+export async function consumeTripCredit(
+  userId: string
+): Promise<number | null> {
+  if (!isDbConfigured()) return null;
+  await ensureSchema();
+  const { rows } = await sql<{ trip_credits: number }>`
+    UPDATE users
+    SET trip_credits = trip_credits - 1,
+        total_trips_generated = total_trips_generated + 1,
+        current_credit_usage_cents = 0,
+        updated_at = now()
+    WHERE id = ${userId} AND trip_credits > 0
+    RETURNING trip_credits
+  `;
+  return rows[0]?.trip_credits ?? null;
+}
+
+/** Per-credit Claude usage cap in cents (silent — never shown to users). */
+export const CREDIT_USAGE_CAP_CENTS = 100;
+
+/**
+ * Returns true if the user has remaining Claude budget on their current
+ * credit. Admins (via the auth layer above this) skip this check entirely.
+ */
+export async function hasClaudeBudget(userId: string): Promise<boolean> {
+  if (!isDbConfigured()) return true;
+  await ensureSchema();
+  const { rows } = await sql<{ current_credit_usage_cents: number }>`
+    SELECT current_credit_usage_cents FROM users WHERE id = ${userId} LIMIT 1
+  `;
+  const used = rows[0]?.current_credit_usage_cents ?? 0;
+  return used < CREDIT_USAGE_CAP_CENTS;
+}
+
+/**
+ * Add usage cents to the current credit's running total. Silent — no
+ * UI visibility. Used after every Claude call to enforce the $1 cap.
+ */
+export async function addClaudeUsage(
+  userId: string,
+  cents: number
+): Promise<void> {
+  if (!isDbConfigured() || cents <= 0) return;
+  await ensureSchema();
+  await sql`
+    UPDATE users
+    SET current_credit_usage_cents = current_credit_usage_cents + ${cents},
+        updated_at = now()
+    WHERE id = ${userId}
+  `;
+}
+
+/** Add N credits to a user (used after a successful Stripe payment). */
+export async function addTripCredits(
+  userId: string,
+  amount: number
+): Promise<void> {
+  if (!isDbConfigured()) return;
+  await ensureSchema();
+  await sql`
+    UPDATE users
+    SET trip_credits = trip_credits + ${amount},
+        updated_at = now()
+    WHERE id = ${userId}
+  `;
 }

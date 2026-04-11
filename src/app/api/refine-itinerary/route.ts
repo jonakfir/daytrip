@@ -1,14 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callClaude, isClaudeConfigured } from "@/lib/claude-client";
+import { jwtVerify } from "jose";
+import {
+  callClaudeWithUsage,
+  estimateUsageCents,
+  isClaudeConfigured,
+} from "@/lib/claude-client";
 import { isAdminRequest } from "@/lib/check-auth";
-import type { Itinerary } from "@/types/itinerary";
+import { addClaudeUsage, hasClaudeBudget } from "@/lib/db";
+import { isPlaceInDestination } from "@/lib/verify-place";
+import type { Activity, Itinerary } from "@/types/itinerary";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || "daytrip-secret-change-me-in-production"
+);
+
 interface RefineRequest {
   itinerary: Itinerary;
   message: string;
+}
+
+interface JwtPayload {
+  email?: string;
+  userId?: string;
+  role?: string;
 }
 
 function stripFences(text: string): string {
@@ -20,11 +37,35 @@ export async function POST(req: NextRequest) {
   try {
     const authCookie = req.cookies.get("daytrip-auth")?.value;
     const admin = await isAdminRequest(authCookie);
-    if (!admin) {
+
+    let userId: string | null = null;
+    if (authCookie) {
+      try {
+        const { payload } = await jwtVerify(authCookie, JWT_SECRET);
+        userId = (payload as JwtPayload).userId ?? null;
+      } catch {}
+    }
+
+    if (!admin && !userId) {
       return NextResponse.json(
-        { error: "subscription_required" },
-        { status: 403 }
+        { error: "auth_required" },
+        { status: 401 }
       );
+    }
+
+    // Silent per-credit usage cap: if the user has exhausted their $1 of
+    // Claude budget on this credit, refuse refinement. Surface as a
+    // generic message — we never reveal the dollar count.
+    if (!admin && userId) {
+      const ok = await hasClaudeBudget(userId);
+      if (!ok) {
+        return NextResponse.json({
+          reply:
+            "You've made a lot of changes to this trip — buy a fresh trip credit ($3) for unlimited refinements on a new itinerary.",
+          itinerary: undefined,
+          unchanged: true,
+        });
+      }
     }
 
     const body = (await req.json()) as RefineRequest;
@@ -91,21 +132,31 @@ REPLY: I swapped the afternoon sushi for a vegetarian omakase at Nagi Shokudo in
 JSON:
 [{"dayNumber":1,"date":"...","title":"...","morning":[...],"afternoon":[...],"evening":[...],"tip":"..."}]
 
-Only modify what the user asked about. Preserve everything else. Use real place names.`;
+STRICT RULES:
+- Only modify what the user asked about. Preserve everything else.
+- GEOGRAPHY (CRITICAL): Every place you suggest MUST be physically located IN the destination city from the itinerary. Not "near", not "in the same country", not "famous nationally". If the itinerary is New York, suggest only places in New York — do NOT suggest Zahav (Philadelphia), restaurants from LA, or anywhere outside NYC. If you aren't 100% certain a place is in the destination, pick a different real place you ARE certain about.
+- Use real place names that actually exist in the destination city.
+- In the REPLY, only reference activity names that EXACTLY appeared in the provided itinerary JSON below. Never invent or guess the name of an activity you're replacing. If you don't remember the exact original name, describe the replacement only (e.g. "Added Breads Bakery on Day 2 morning" instead of "Replaced X with Breads Bakery").
+- Meal timing: morning food = breakfast/brunch, afternoon food = lunch, evening food = dinner. Don't put steak at breakfast or bagels at dinner.`;
 
     const userPrompt = `Current itinerary for ${compactItinerary.destination}:
 ${JSON.stringify(compactItinerary, null, 2)}
 
 User's request: ${body.message.trim()}
 
-Update the days array accordingly. Keep activities not mentioned unchanged. Each Activity needs: time (HH:MM), name, category (food|culture|shopping|nature|entertainment|transport), description (1-2 sentences), duration.`;
+Update the days array accordingly. Keep activities not mentioned unchanged. Each Activity needs: time (HH:MM), name, category (food|culture|shopping|nature|entertainment|transport), description (1-2 sentences), duration.
 
-    const text = await callClaude({
+Remember: in your REPLY line, ONLY reference activity names that appear in the JSON above. If you're replacing something, use its exact original name.`;
+
+    const { text, usage } = await callClaudeWithUsage({
       system: systemPrompt,
       prompt: userPrompt,
       model: "claude-sonnet-4-6",
-      maxTokens: 6000,
+      maxTokens: 4000,
     });
+    if (userId && !admin) {
+      addClaudeUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
+    }
 
     // Parse the REPLY + JSON format
     const replyMatch = text.match(/REPLY:\s*([^\n]+)/i);
@@ -175,6 +226,75 @@ Update the days array accordingly. Keep activities not mentioned unchanged. Each
       });
     }
 
+    // ── Post-validation: catch out-of-city hallucinations ────────────
+    // Claude sometimes suggests famous restaurants that are in OTHER cities
+    // (e.g. "Zahav" for New York, which is actually in Philadelphia).
+    // We verify every NEW food activity against OSM and revert any that
+    // aren't actually in the destination city.
+    const destination = body.itinerary.destination;
+    const oldDays = body.itinerary.days;
+    const changedFoodPositions: Array<{
+      dayIdx: number;
+      block: "morning" | "afternoon" | "evening";
+      actIdx: number;
+      oldActivity: Activity;
+      newActivity: Activity;
+    }> = [];
+
+    for (let di = 0; di < Math.min(newDays.length, oldDays.length); di++) {
+      const oldDay = oldDays[di];
+      const newDay = newDays[di];
+      for (const block of ["morning", "afternoon", "evening"] as const) {
+        const oldBlock = oldDay[block] ?? [];
+        const newBlock = newDay[block] ?? [];
+        for (let ai = 0; ai < newBlock.length; ai++) {
+          const na = newBlock[ai];
+          const oa = oldBlock[ai];
+          if (
+            na?.category === "food" &&
+            (!oa || oa.name !== na.name)
+          ) {
+            changedFoodPositions.push({
+              dayIdx: di,
+              block,
+              actIdx: ai,
+              oldActivity: oa ?? na,
+              newActivity: na,
+            });
+          }
+        }
+      }
+    }
+
+    // Verify in parallel — Photon handles concurrent requests fine
+    const verifications = await Promise.all(
+      changedFoodPositions.map(({ newActivity }) =>
+        isPlaceInDestination(newActivity.name, destination)
+      )
+    );
+
+    const rejected: string[] = [];
+    for (let idx = 0; idx < changedFoodPositions.length; idx++) {
+      if (!verifications[idx]) {
+        const pos = changedFoodPositions[idx];
+        rejected.push(pos.newActivity.name);
+        // Revert this one activity to the original
+        newDays[pos.dayIdx][pos.block][pos.actIdx] = pos.oldActivity;
+        console.warn(
+          `[refine-itinerary] Rejected out-of-city food: ${pos.newActivity.name} (destination: ${destination})`
+        );
+      }
+    }
+
+    // If we rejected anything, prepend a note to the reply so the user
+    // knows some changes were blocked.
+    if (rejected.length > 0) {
+      const list = rejected.slice(0, 3).join(", ");
+      reply = `${reply}  (Note: I tried suggesting ${list}${
+        rejected.length > 3 ? " and others" : ""
+      } but those aren't actually in ${destination.split(",")[0]}, so I kept the original pick${rejected.length > 1 ? "s" : ""} for those slot${rejected.length > 1 ? "s" : ""}.)`;
+    }
+
     const updatedItinerary: Itinerary = {
       ...body.itinerary,
       days: newDays,
@@ -183,6 +303,7 @@ Update the days array accordingly. Keep activities not mentioned unchanged. Each
     return NextResponse.json({
       reply,
       itinerary: updatedItinerary,
+      rejectedPlaces: rejected,
     });
   } catch (e) {
     console.error("refine-itinerary error:", e);

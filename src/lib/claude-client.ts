@@ -4,8 +4,8 @@ import Anthropic from "@anthropic-ai/sdk";
  * Unified Claude caller that supports two backends:
  *
  * 1. **Local proxy** (preferred for personal use) — forwards to a Mac running
- *    the Claude CLI. Set DAYTRIP_PROXY_URL + DAYTRIP_PROXY_SECRET. Uses your
- *    Claude Max subscription quota, not API credits.
+ *    the Claude CLI / OAuth direct API. Set DAYTRIP_PROXY_URL +
+ *    DAYTRIP_PROXY_SECRET. Uses your Claude Max subscription quota.
  *
  * 2. **Anthropic SDK** (fallback) — uses ANTHROPIC_API_KEY and pay-per-token.
  *
@@ -20,7 +20,18 @@ export interface ClaudeCallOptions {
   maxTokens?: number;
 }
 
-async function callProxy(opts: ClaudeCallOptions): Promise<string> {
+export interface ClaudeUsage {
+  inputTokens: number;
+  outputTokens: number;
+  model?: string;
+}
+
+export interface ClaudeCallResult {
+  text: string;
+  usage: ClaudeUsage;
+}
+
+async function callProxy(opts: ClaudeCallOptions): Promise<ClaudeCallResult> {
   const url = process.env.DAYTRIP_PROXY_URL!.replace(/\/$/, "");
   const secret = process.env.DAYTRIP_PROXY_SECRET!;
 
@@ -43,25 +54,44 @@ async function callProxy(opts: ClaudeCallOptions): Promise<string> {
     );
   }
 
-  const data = (await res.json()) as { text?: string; error?: string };
+  const data = (await res.json()) as {
+    text?: string;
+    error?: string;
+    usage?: { inputTokens?: number; outputTokens?: number; model?: string };
+  };
   if (data.error) throw new Error(`Proxy error: ${data.error}`);
   if (!data.text) throw new Error("Proxy returned no text");
-  return data.text;
+  return {
+    text: data.text,
+    usage: {
+      inputTokens: data.usage?.inputTokens ?? 0,
+      outputTokens: data.usage?.outputTokens ?? 0,
+      model: data.usage?.model,
+    },
+  };
 }
 
-async function callSdk(opts: ClaudeCallOptions): Promise<string> {
+async function callSdk(opts: ClaudeCallOptions): Promise<ClaudeCallResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
-    model: opts.model ?? "claude-sonnet-4-6",
-    max_tokens: opts.maxTokens ?? 8000,
+    model: opts.model ?? "claude-haiku-4-5",
+    max_tokens: opts.maxTokens ?? 4000,
     system: opts.system,
     messages: [{ role: "user", content: opts.prompt }],
   });
 
-  return response.content[0].type === "text" ? response.content[0].text : "";
+  return {
+    text:
+      response.content[0]?.type === "text" ? response.content[0].text : "",
+    usage: {
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+      model: response.model,
+    },
+  };
 }
 
 /** True if DAYTRIP_PROXY_URL + DAYTRIP_PROXY_SECRET are both set. */
@@ -75,10 +105,12 @@ export function isClaudeConfigured(): boolean {
 }
 
 /**
- * Call Claude with the given system + user prompt. Tries the proxy first
- * if configured, falls back to the SDK on proxy failure.
+ * Call Claude. Tries the proxy first if configured, falls back to the SDK
+ * on failure. Returns text + token usage so callers can compute cost.
  */
-export async function callClaude(opts: ClaudeCallOptions): Promise<string> {
+export async function callClaudeWithUsage(
+  opts: ClaudeCallOptions
+): Promise<ClaudeCallResult> {
   if (isProxyConfigured()) {
     try {
       return await callProxy(opts);
@@ -91,4 +123,44 @@ export async function callClaude(opts: ClaudeCallOptions): Promise<string> {
     }
   }
   return callSdk(opts);
+}
+
+/**
+ * Backwards-compatible helper that returns just the text. New callers
+ * should use callClaudeWithUsage() so they can track Claude cost.
+ */
+export async function callClaude(opts: ClaudeCallOptions): Promise<string> {
+  const { text } = await callClaudeWithUsage(opts);
+  return text;
+}
+
+// ── Cost tracking ────────────────────────────────────────────────────────
+
+/**
+ * Approximate Claude pricing per million tokens (USD).
+ * Used to compute the silent per-credit usage cap.
+ *
+ * Source: https://www.anthropic.com/pricing (Haiku 4.5)
+ */
+const PRICING: Record<string, { input: number; output: number }> = {
+  "claude-haiku-4-5": { input: 1.0, output: 5.0 },
+  "claude-haiku-4-5-20251001": { input: 1.0, output: 5.0 },
+  "claude-sonnet-4-6": { input: 3.0, output: 15.0 },
+  "claude-sonnet-4-5": { input: 3.0, output: 15.0 },
+  "claude-opus-4-6": { input: 15.0, output: 75.0 },
+};
+
+/**
+ * Convert a token usage record into cents of estimated Claude API cost.
+ * Falls back to Haiku pricing for unknown models.
+ */
+export function estimateUsageCents(usage: ClaudeUsage): number {
+  const model = usage.model ?? "claude-haiku-4-5";
+  const rates = PRICING[model] ?? PRICING["claude-haiku-4-5"];
+  // (tokens / 1_000_000) × $/M × 100 cents
+  const usd =
+    (usage.inputTokens / 1_000_000) * rates.input +
+    (usage.outputTokens / 1_000_000) * rates.output;
+  // Round up so any usage > 0 counts as at least 1 cent
+  return Math.max(1, Math.ceil(usd * 100));
 }

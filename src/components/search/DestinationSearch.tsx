@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, MapPin, Users, X, Plus, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { Calendar, Users, Plus, Sparkles, Plane, Wallet, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import PlaceInput from "@/components/search/PlaceInput";
+import { extractIataFromLabel, getAirportByIATA } from "@/lib/airports";
 
 interface SearchParams {
   destination: string;
@@ -11,6 +13,30 @@ interface SearchParams {
   endDate: string;
   travelers: number;
   style: string;
+  originCity: string;
+  /** IATA code if the user picked an airport for origin (e.g. "JFK"). */
+  originAirport?: string;
+  /** IATA code if the user picked an airport for the primary destination. */
+  destinationAirport?: string;
+  /** Budget per person per day in USD, or null for "no preference". */
+  budgetPerDay: number | null;
+}
+
+/** If the label looks like "JFK · ...", strip the airport code and return
+ *  the bare city name along with the IATA code. Otherwise return the label
+ *  unchanged with a null IATA. */
+function resolveAirportLabel(label: string): {
+  cityText: string;
+  iata: string | null;
+} {
+  const trimmed = label.trim();
+  const iata = extractIataFromLabel(trimmed);
+  if (!iata) return { cityText: trimmed, iata: null };
+  const airport = getAirportByIATA(iata);
+  if (!airport) return { cityText: trimmed, iata };
+  // Collapse to "<City>, <Country>" so the rest of the app treats it as
+  // a normal destination and Skyscanner gets the explicit airport code.
+  return { cityText: `${airport.city}, ${airport.country}`, iata };
 }
 
 interface Props {
@@ -35,56 +61,8 @@ const POPULAR_DESTINATIONS = [
   "Marrakech, Morocco",
 ];
 
-const DESTINATIONS = [
-  "Tokyo, Japan",
-  "Kyoto, Japan",
-  "Paris, France",
-  "Nice, France",
-  "Bali, Indonesia",
-  "Barcelona, Spain",
-  "Madrid, Spain",
-  "Lisbon, Portugal",
-  "Porto, Portugal",
-  "Rome, Italy",
-  "Florence, Italy",
-  "Venice, Italy",
-  "Amalfi Coast, Italy",
-  "Cinque Terre, Italy",
-  "Marrakech, Morocco",
-  "Cape Town, South Africa",
-  "Reykjavik, Iceland",
-  "Dubrovnik, Croatia",
-  "Santorini, Greece",
-  "Athens, Greece",
-  "Istanbul, Turkey",
-  "Dubai, UAE",
-  "Petra, Jordan",
-  "Jaipur, India",
-  "Mumbai, India",
-  "Bangkok, Thailand",
-  "Singapore",
-  "Hong Kong",
-  "Hoi An, Vietnam",
-  "Seoul, South Korea",
-  "Sydney, Australia",
-  "Queenstown, New Zealand",
-  "New York, USA",
-  "San Francisco, USA",
-  "Mexico City, Mexico",
-  "Havana, Cuba",
-  "Rio de Janeiro, Brazil",
-  "Buenos Aires, Argentina",
-  "Machu Picchu, Peru",
-  "Bruges, Belgium",
-  "Amsterdam, Netherlands",
-  "Berlin, Germany",
-  "Vienna, Austria",
-  "Prague, Czech Republic",
-  "London, England",
-  "Banff, Canada",
-  "Zanzibar, Tanzania",
-  "Cairo, Egypt",
-];
+// Destination autocomplete now uses Photon (Komoot's free OSM geocoder)
+// via the PlaceInput component — no hardcoded list needed.
 
 const STYLES = ["Adventure", "Cultural", "Relaxation", "Foodie", "Luxury"];
 
@@ -100,20 +78,19 @@ export default function DestinationSearch({
 }: Props) {
   // Multi-city support — array of destinations, first is required
   const [destinations, setDestinations] = useState<string[]>([""]);
+  const [originCity, setOriginCity] = useState<string>("");
   const [startDate, setStartDate] = useState<string>(todayPlus(14));
   const [endDate, setEndDate] = useState<string>(todayPlus(19));
   const [travelers, setTravelers] = useState<number>(2);
   const [style, setStyle] = useState<string>("Cultural");
+  // Budget per person per day in USD. Defaults to $150 (moderate).
+  const [budgetPerDay, setBudgetPerDay] = useState<number>(150);
 
   // Typewriter placeholder
   const [placeholderText, setPlaceholderText] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [charIndex, setCharIndex] = useState(0);
   const [isTyping, setIsTyping] = useState(true);
-
-  // Suggestions dropdown
-  const [showSuggestions, setShowSuggestions] = useState<number | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // Typewriter effect — animates the PLACEHOLDER attribute only.
   useEffect(() => {
@@ -144,37 +121,17 @@ export default function DestinationSearch({
     return () => clearTimeout(timer);
   }, [charIndex, isTyping, placeholderIndex]);
 
-  // Click outside suggestions to close them
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setShowSuggestions(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
   // Notify parent of primary destination changes (for landscape morph)
   useEffect(() => {
     onDestinationChange?.(destinations[0] || "");
   }, [destinations, onDestinationChange]);
 
-  const handleDestinationInput = (idx: number, value: string) => {
-    const next = [...destinations];
-    next[idx] = value;
-    setDestinations(next);
-    setShowSuggestions(idx);
-  };
-
-  const selectSuggestion = (idx: number, value: string) => {
-    const next = [...destinations];
-    next[idx] = value;
-    setDestinations(next);
-    setShowSuggestions(null);
+  const setDestinationAt = (idx: number, value: string) => {
+    setDestinations((prev) => {
+      const next = [...prev];
+      next[idx] = value;
+      return next;
+    });
   };
 
   const addCity = () => {
@@ -190,32 +147,36 @@ export default function DestinationSearch({
     e.preventDefault();
     const primary = destinations[0]?.trim();
     if (!primary) return;
-    const allCities = destinations
-      .map((d) => d.trim())
-      .filter(Boolean)
+
+    // If the user picked an airport entry (e.g. "JFK · New York (...)") we
+    // split the airport code off so the rest of the pipeline still sees
+    // a plain city name but we can hand the IATA straight to Skyscanner.
+    const origin = resolveAirportLabel(originCity);
+    const resolvedDestinations = destinations
+      .map((d) => resolveAirportLabel(d.trim()))
+      .filter((d) => d.cityText);
+    const primaryDest = resolvedDestinations[0];
+    const allCities = resolvedDestinations
+      .map((d) => d.cityText)
       .join(" → ");
+
     onSearch({
-      destination: allCities || primary,
+      destination: allCities || primaryDest.cityText,
       startDate,
       endDate,
       travelers,
       style,
+      originCity: origin.cityText,
+      originAirport: origin.iata ?? undefined,
+      destinationAirport: primaryDest.iata ?? undefined,
+      budgetPerDay,
     });
-  };
-
-  const filteredSuggestions = (input: string): string[] => {
-    if (!input.trim()) return [];
-    const q = input.toLowerCase();
-    return DESTINATIONS.filter((d) => d.toLowerCase().includes(q)).slice(0, 6);
   };
 
   const isMultiCity = destinations.length > 1;
 
   return (
-    <div
-      ref={containerRef}
-      className="relative mx-auto max-w-3xl"
-    >
+    <div className="relative mx-auto max-w-3xl">
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -232,82 +193,64 @@ export default function DestinationSearch({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Origin "from" input */}
+          <div>
+            <label className="block font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+              Flying from
+            </label>
+            <PlaceInput
+              value={originCity}
+              onChange={setOriginCity}
+              placeholder="e.g. New York, London, Tokyo"
+              leftIcon={
+                <Plane className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30 -rotate-45 pointer-events-none" />
+              }
+              inputClassName="py-3 text-body-sm placeholder:font-sans"
+            />
+          </div>
+
           {/* Destination inputs */}
           <div className="space-y-2">
+            <label className="block font-sans text-caption font-medium text-charcoal-800/60">
+              Going to
+            </label>
             {destinations.map((dest, index) => {
-              const suggestions = filteredSuggestions(dest);
               const isPrimary = index === 0;
               return (
-                <div key={index} className="relative">
-                  <div className="flex items-center gap-2">
-                    {isMultiCity && (
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-terracotta-500/10 text-terracotta-500 font-sans text-caption font-medium flex items-center justify-center">
-                        {index + 1}
-                      </span>
-                    )}
-                    <div className="relative flex-1">
-                      <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30" />
-                      <input
-                        type="text"
-                        value={dest}
-                        onChange={(e) =>
-                          handleDestinationInput(index, e.target.value)
-                        }
-                        onFocus={() => setShowSuggestions(index)}
-                        placeholder={
-                          isPrimary && !dest
-                            ? `${placeholderText}|`
-                            : isPrimary
-                            ? ""
-                            : "Add next destination..."
-                        }
-                        className={cn(
-                          "w-full pl-11 pr-10 py-3.5 bg-cream-50 border border-cream-200 rounded-2xl",
-                          "font-sans text-body text-charcoal-900",
-                          "placeholder:text-charcoal-800/30 placeholder:font-serif",
-                          "focus:outline-none focus:ring-2 focus:ring-terracotta-500/40 focus:border-terracotta-500/30"
-                        )}
-                      />
-                      {dest && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (isMultiCity) removeCity(index);
-                            else handleDestinationInput(0, "");
-                          }}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-charcoal-800/40 hover:text-terracotta-500 hover:bg-terracotta-500/10"
-                          aria-label="Clear"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Suggestions dropdown */}
-                  <AnimatePresence>
-                    {showSuggestions === index && suggestions.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.15 }}
-                        className="absolute left-0 right-0 top-full mt-2 z-30 bg-white rounded-2xl shadow-elevated border border-cream-200 overflow-hidden"
-                      >
-                        {suggestions.map((s) => (
+                <div key={index} className="flex items-center gap-2">
+                  {isMultiCity && (
+                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-terracotta-500/10 text-terracotta-500 font-sans text-caption font-medium flex items-center justify-center">
+                      {index + 1}
+                    </span>
+                  )}
+                  <div className="relative flex-1">
+                    <PlaceInput
+                      value={dest}
+                      onChange={(v) => setDestinationAt(index, v)}
+                      placeholder={
+                        isPrimary && !dest
+                          ? `${placeholderText}|`
+                          : isPrimary
+                          ? ""
+                          : "Add next destination..."
+                      }
+                      rightSlot={
+                        dest ? (
                           <button
-                            key={s}
                             type="button"
-                            onClick={() => selectSuggestion(index, s)}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left font-sans text-body-sm text-charcoal-900 hover:bg-cream-100 transition-colors"
+                            onClick={() => {
+                              if (isMultiCity) removeCity(index);
+                              else setDestinationAt(0, "");
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-charcoal-800/40 hover:text-terracotta-500 hover:bg-terracotta-500/10 z-10"
+                            aria-label="Clear"
                           >
-                            <MapPin className="w-3.5 h-3.5 text-terracotta-500/60" />
-                            {s}
+                            <X className="w-3.5 h-3.5" />
                           </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                        ) : undefined
+                      }
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -342,7 +285,7 @@ export default function DestinationSearch({
                 <button
                   key={d}
                   type="button"
-                  onClick={() => selectSuggestion(0, d)}
+                  onClick={() => setDestinationAt(0, d)}
                   className="px-3 py-1 rounded-full bg-cream-100 border border-cream-200 font-sans text-caption text-charcoal-800/70 hover:bg-terracotta-500 hover:text-white hover:border-terracotta-500 transition-colors"
                 >
                   {d.split(",")[0]}
@@ -433,6 +376,56 @@ export default function DestinationSearch({
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Budget */}
+          <div>
+            <label className="flex items-center justify-between font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+              <span className="flex items-center gap-1.5">
+                <Wallet className="w-3.5 h-3.5" />
+                Budget per person per day
+              </span>
+              <span className="font-serif text-body text-charcoal-900">
+                ${budgetPerDay}
+                <span className="text-charcoal-800/40 text-caption ml-0.5">
+                  /day
+                </span>
+              </span>
+            </label>
+            <div className="px-3 py-3 bg-cream-50 border border-cream-200 rounded-xl">
+              <input
+                type="range"
+                min={30}
+                max={800}
+                step={10}
+                value={budgetPerDay}
+                onChange={(e) => setBudgetPerDay(parseInt(e.target.value))}
+                className="w-full accent-terracotta-500"
+                aria-label="Budget per person per day in USD"
+              />
+              <div className="flex justify-between text-caption font-sans text-charcoal-800/40 mt-1.5">
+                <span>Shoestring $30</span>
+                <span>Mid $150</span>
+                <span>Luxury $800+</span>
+              </div>
+              <div className="flex gap-1.5 mt-3 flex-wrap">
+                {[50, 100, 150, 300, 500].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setBudgetPerDay(preset)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-full text-caption font-sans border transition-colors",
+                      budgetPerDay === preset
+                        ? "bg-terracotta-500 text-white border-terracotta-500"
+                        : "bg-white border-cream-300 text-charcoal-800/70 hover:border-terracotta-500"
+                    )}
+                  >
+                    ${preset}
+                  </button>
+                ))}
               </div>
             </div>
           </div>

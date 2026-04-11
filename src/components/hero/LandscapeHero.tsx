@@ -52,7 +52,17 @@ export default function LandscapeHero() {
   }, []);
 
   const handleSearch = useCallback(
-    (params: { destination: string; startDate: string; endDate: string; travelers: number; style: string }) => {
+    (params: {
+      destination: string;
+      startDate: string;
+      endDate: string;
+      travelers: number;
+      style: string;
+      originCity: string;
+      originAirport?: string;
+      destinationAirport?: string;
+      budgetPerDay: number | null;
+    }) => {
       const sp = new URLSearchParams({
         destination: params.destination,
         startDate: params.startDate,
@@ -60,6 +70,12 @@ export default function LandscapeHero() {
         travelers: String(params.travelers),
         style: params.style,
       });
+      if (params.originCity) sp.set("originCity", params.originCity);
+      if (params.originAirport) sp.set("originAirport", params.originAirport);
+      if (params.destinationAirport)
+        sp.set("destinationAirport", params.destinationAirport);
+      if (params.budgetPerDay != null)
+        sp.set("budgetPerDay", String(params.budgetPerDay));
       router.push(`/trip/generating?${sp.toString()}`);
     },
     [router]

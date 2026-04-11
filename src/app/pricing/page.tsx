@@ -1,185 +1,270 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Check, Sparkles, Zap, Crown } from "lucide-react";
+import { useEffect, useState, Suspense } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
+import {
+  Check,
+  Sparkles,
+  Plane,
+  MapPin,
+  MessageCircle,
+  RefreshCw,
+  Loader2,
+} from "lucide-react";
 
-const plans = [
-  {
-    name: "Explorer",
-    price: "$9",
-    period: "/trip",
-    description: "Perfect for a single getaway",
-    icon: Zap,
-    color: "terracotta",
-    features: [
-      "1 AI-generated itinerary",
-      "Day-by-day activity plan",
-      "Hotel & flight recommendations",
-      "Shareable trip link",
-      "Activity swap suggestions",
-    ],
-    cta: "Get started",
-    popular: false,
-  },
-  {
-    name: "Voyager",
-    price: "$29",
-    period: "/month",
-    description: "For the frequent traveler",
-    icon: Sparkles,
-    color: "terracotta",
-    features: [
-      "Unlimited itineraries",
-      "Multi-city trip planning",
-      "Priority AI generation",
-      "Exclusive hidden gems",
-      "Bookable activities & tours",
-      "Save & share all trips",
-      "Email trip summaries",
-    ],
-    cta: "Start planning",
-    popular: true,
-  },
-  {
-    name: "First Class",
-    price: "$79",
-    period: "/year",
-    description: "Best value — save 77%",
-    icon: Crown,
-    color: "sage",
-    features: [
-      "Everything in Voyager",
-      "Yearly unlimited access",
-      "Concierge-level detail",
-      "Offline PDF exports",
-      "Priority support",
-      "Early access to new features",
-    ],
-    cta: "Upgrade now",
-    popular: false,
-  },
+const FEATURES = [
+  { icon: MapPin, text: "Real, day-by-day itinerary with attractions" },
+  { icon: Plane, text: "Skyscanner flight links from your home city" },
+  { icon: Sparkles, text: "Wikipedia hero photo + 3 hotels + 3 tours" },
+  { icon: RefreshCw, text: "Swap any activity with one click" },
+  { icon: MessageCircle, text: "Refine your trip with AI chat" },
 ];
 
-export default function PricingPage() {
-  const router = useRouter();
-  const [toast, setToast] = useState(false);
+interface CreditState {
+  authenticated: boolean;
+  credits: number; // -1 = unlimited (admin)
+  isAdmin: boolean;
+}
 
-  const showToast = () => {
-    setToast(true);
-    setTimeout(() => setToast(false), 3000);
+function PricingContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [credits, setCredits] = useState<CreditState | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const status = searchParams.get("status"); // "success" | "cancel" | null
+
+  useEffect(() => {
+    fetch("/api/me/credits")
+      .then((r) => r.json())
+      .then((d) => setCredits(d as CreditState))
+      .catch(() => setCredits({ authenticated: false, credits: 0, isAdmin: false }));
+  }, []);
+
+  const buyTrip = async () => {
+    if (!credits?.authenticated) {
+      router.push("/signup?next=/pricing");
+      return;
+    }
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnTo: "/pricing" }),
+      });
+      const data = await res.json();
+      if (data?.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data?.message ?? data?.error ?? "Checkout failed");
+        setCheckoutLoading(false);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Checkout failed");
+      setCheckoutLoading(false);
+    }
+  };
+
+  const ctaLabel = (() => {
+    if (credits?.isAdmin) return "You have admin access";
+    if (!credits?.authenticated) return "Sign up — first trip free";
+    if (credits.credits > 0)
+      return `Plan a trip (${credits.credits} credit${credits.credits === 1 ? "" : "s"} left)`;
+    return checkoutLoading ? "Redirecting…" : "Buy 1 trip — $3";
+  })();
+
+  const ctaAction = () => {
+    if (credits?.isAdmin) {
+      router.push("/");
+    } else if (!credits?.authenticated) {
+      router.push("/signup?next=/pricing");
+    } else if (credits.credits > 0) {
+      router.push("/");
+    } else {
+      buyTrip();
+    }
   };
 
   return (
-    <main className="min-h-screen bg-cream-100 py-20 px-4">
-      <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-16">
-
-          <p className="text-caption uppercase tracking-[0.2em] text-terracotta-500 font-sans mb-3">
-            Pricing
-          </p>
-          <h1 className="font-serif text-display-lg md:text-display-xl text-charcoal-900 mb-4">
-            Plan trips like a pro
-          </h1>
-          <p className="text-body-lg text-charcoal-800/60 max-w-xl mx-auto">
-            AI-powered itineraries with real bookable hotels, flights, and activities.
-            Choose the plan that fits your wanderlust.
-          </p>
-        </div>
-
-        {/* Plans */}
-        <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
-          {plans.map((plan) => (
-            <div
-              key={plan.name}
-              className={`relative bg-white rounded-3xl p-8 shadow-card hover:shadow-elevated transition-shadow duration-300 ${
-                plan.popular
-                  ? "ring-2 ring-terracotta-500 scale-[1.02]"
-                  : ""
-              }`}
-            >
-              {plan.popular && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-terracotta-500 text-white text-caption font-sans font-medium rounded-full">
-                  Most Popular
-                </div>
-              )}
-
-              <div className="mb-6">
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                    plan.color === "sage"
-                      ? "bg-sage-500/10"
-                      : "bg-terracotta-500/10"
-                  }`}
-                >
-                  <plan.icon
-                    className={`w-6 h-6 ${
-                      plan.color === "sage"
-                        ? "text-sage-600"
-                        : "text-terracotta-500"
-                    }`}
-                  />
-                </div>
-                <h3 className="font-serif text-heading-lg text-charcoal-900">
-                  {plan.name}
-                </h3>
-                <p className="text-body-sm text-charcoal-800/50 mt-1">
-                  {plan.description}
-                </p>
-              </div>
-
-              <div className="flex items-baseline gap-1 mb-8">
-                <span className="font-serif text-display-lg text-charcoal-900">
-                  {plan.price}
-                </span>
-                <span className="text-body text-charcoal-800/40">
-                  {plan.period}
-                </span>
-              </div>
-
-              <ul className="space-y-3 mb-8">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-3">
-                    <Check className="w-4 h-4 text-sage-500 mt-0.5 shrink-0" />
-                    <span className="text-body-sm text-charcoal-800/70">
-                      {feature}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-
-              <button
-                onClick={showToast}
-                className={`w-full py-3.5 rounded-xl font-sans font-medium transition-colors ${
-                  plan.popular
-                    ? "bg-terracotta-500 text-white hover:bg-terracotta-600"
-                    : "border border-cream-300 text-charcoal-900 hover:border-terracotta-500 hover:text-terracotta-500"
-                }`}
-              >
-                {plan.cta}
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {/* Back link */}
-        <div className="text-center mt-12">
-          <button
-            onClick={() => router.push("/")}
-            className="text-body-sm text-terracotta-500 hover:underline"
+    <div className="min-h-screen bg-cream-50">
+      <header className="px-6 md:px-12 lg:px-20 py-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <Link
+            href="/"
+            className="font-serif text-heading-lg text-charcoal-900 hover:text-terracotta-500 transition-colors"
+          >
+            Daytrip
+          </Link>
+          <Link
+            href="/"
+            className="font-sans text-body-sm text-charcoal-800/60 hover:text-charcoal-900"
           >
             ← Back to Daytrip
-          </button>
+          </Link>
         </div>
-      </div>
+      </header>
 
-      {/* Toast notification */}
-      {toast && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-charcoal-900 text-white px-6 py-3 rounded-xl shadow-elevated font-sans text-body-sm animate-fade-in">
-          Payment integration launching soon — join the waitlist!
+      <main className="px-6 md:px-12 lg:px-20 py-12 md:py-20">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="max-w-3xl mx-auto"
+        >
+          <div className="text-center mb-12">
+            <p className="font-sans text-caption uppercase tracking-[0.2em] text-terracotta-500 mb-3">
+              Pricing
+            </p>
+            <h1 className="font-serif text-display-lg text-charcoal-900 mb-4">
+              Pay only for what you use
+            </h1>
+            <p className="font-sans text-body-lg text-charcoal-800/60 max-w-xl mx-auto">
+              Your first trip is on us. After that, every itinerary is just{" "}
+              <span className="font-medium text-charcoal-900">$3</span> — no
+              subscription, no commitment, no monthly fees.
+            </p>
+          </div>
+
+          {/* Status banner */}
+          {status === "success" && (
+            <div className="mb-8 px-5 py-3 rounded-2xl bg-sage-300/20 border border-sage-400/30 text-center font-sans text-body-sm text-sage-700">
+              ✓ Payment successful — your trip credit has been added.
+            </div>
+          )}
+          {status === "cancel" && (
+            <div className="mb-8 px-5 py-3 rounded-2xl bg-cream-200 border border-cream-300 text-center font-sans text-body-sm text-charcoal-800/70">
+              Checkout cancelled. No charge was made.
+            </div>
+          )}
+
+          {/* The single big pricing card */}
+          <div className="bg-white rounded-3xl shadow-elevated border border-cream-200 p-8 md:p-12">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-baseline gap-1 mb-2">
+                <span className="font-serif text-display-lg text-charcoal-900">
+                  $3
+                </span>
+                <span className="font-sans text-body-lg text-charcoal-800/50">
+                  / trip
+                </span>
+              </div>
+              <div className="font-sans text-body-sm text-terracotta-500 font-medium">
+                First trip free when you sign up
+              </div>
+            </div>
+
+            {/* Credits state */}
+            {credits?.authenticated && !credits.isAdmin && (
+              <div className="mb-6 px-5 py-3 rounded-2xl bg-cream-100 border border-cream-200 text-center">
+                <span className="font-sans text-caption text-charcoal-800/50 uppercase tracking-wider">
+                  Your balance
+                </span>
+                <div className="font-serif text-heading-lg text-charcoal-900 mt-1">
+                  {credits.credits} trip{credits.credits === 1 ? "" : "s"}{" "}
+                  available
+                </div>
+              </div>
+            )}
+            {credits?.isAdmin && (
+              <div className="mb-6 px-5 py-3 rounded-2xl bg-terracotta-500/10 border border-terracotta-500/20 text-center">
+                <span className="font-sans text-body-sm text-terracotta-600 font-medium">
+                  Admin account — unlimited trips
+                </span>
+              </div>
+            )}
+
+            {/* Feature list */}
+            <ul className="space-y-3 mb-8">
+              {FEATURES.map((f) => {
+                const Icon = f.icon;
+                return (
+                  <li
+                    key={f.text}
+                    className="flex items-start gap-3 font-sans text-body-sm text-charcoal-800/80"
+                  >
+                    <div className="p-1.5 rounded-lg bg-sage-300/20 text-sage-600 mt-0.5">
+                      <Icon className="w-3.5 h-3.5" />
+                    </div>
+                    <span>{f.text}</span>
+                  </li>
+                );
+              })}
+              <li className="flex items-start gap-3 font-sans text-body-sm text-charcoal-800/80">
+                <div className="p-1.5 rounded-lg bg-sage-300/20 text-sage-600 mt-0.5">
+                  <Check className="w-3.5 h-3.5" />
+                </div>
+                <span>One-time payment — no subscription, ever</span>
+              </li>
+            </ul>
+
+            <button
+              onClick={ctaAction}
+              disabled={checkoutLoading}
+              className="w-full py-4 px-6 rounded-2xl bg-terracotta-500 hover:bg-terracotta-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-sans font-medium text-body shadow-card transition-all"
+            >
+              {checkoutLoading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Redirecting…
+                </span>
+              ) : (
+                ctaLabel
+              )}
+            </button>
+
+            <p className="mt-4 text-center font-sans text-caption text-charcoal-800/40">
+              Secure payment via Stripe. Cards accepted worldwide.
+            </p>
+          </div>
+
+          {/* Tiny FAQ */}
+          <div className="mt-16 grid md:grid-cols-3 gap-6">
+            <div>
+              <h3 className="font-serif text-heading text-charcoal-900 mb-2">
+                Why one-time?
+              </h3>
+              <p className="font-sans text-body-sm text-charcoal-800/60">
+                You shouldn&apos;t pay every month if you only travel
+                occasionally. Buy a credit when you need a trip.
+              </p>
+            </div>
+            <div>
+              <h3 className="font-serif text-heading text-charcoal-900 mb-2">
+                What does $3 buy?
+              </h3>
+              <p className="font-sans text-body-sm text-charcoal-800/60">
+                One full multi-day itinerary, real flight + hotel links, and
+                unlimited refinements via the AI chat for that trip.
+              </p>
+            </div>
+            <div>
+              <h3 className="font-serif text-heading text-charcoal-900 mb-2">
+                Can I get a refund?
+              </h3>
+              <p className="font-sans text-body-sm text-charcoal-800/60">
+                If something&apos;s wrong with a trip, email
+                hello@daytrip.travel and we&apos;ll refund you within 24 hours.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      </main>
+    </div>
+  );
+}
+
+export default function PricingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-cream-50 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-terracotta-500" />
         </div>
-      )}
-    </main>
+      }
+    >
+      <PricingContent />
+    </Suspense>
   );
 }
