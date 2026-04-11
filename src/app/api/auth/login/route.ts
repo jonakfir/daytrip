@@ -8,8 +8,11 @@ import { JWT_SECRET } from "@/lib/jwt-secret";
 // The PASSWORD must come from the ADMIN_PASSWORD env var (set in Vercel).
 const PERMANENT_ADMIN_EMAIL = "jonakfir@gmail.com";
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+// .trim() defends against the Vercel env-var quirk that preserves a
+// literal trailing \n in pasted values. Same fix that's already in
+// claude-client.ts and jwt-secret.ts.
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").trim();
+const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || "").trim();
 
 async function issueCookie(
   email: string,
