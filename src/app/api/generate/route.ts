@@ -20,6 +20,7 @@ import {
 } from "@/lib/skyscanner";
 import { getAirportByIATA, searchAirports } from "@/lib/airports";
 import { fetchTravelpayoutsFlights } from "@/lib/travelpayouts";
+import { fetchSerpApiFlights } from "@/lib/serpapi";
 
 import { JWT_SECRET } from "@/lib/jwt-secret";
 
@@ -741,15 +742,19 @@ function postProcessFlights(
 /**
  * Pick the right flights to surface to the UI. Priority order:
  *
- *   1. **Travelpayouts** — real cached prices from Aviasales, includes
- *      affiliate marker for revenue. Free, no per-call cost. Primary path.
- *   2. **Amadeus** — real live prices from the Self-Service API. Being
+ *   1. **SerpAPI Google Flights** — REAL Google Flights data for ANY
+ *      route. Universal coverage. Paid: 100 free queries/mo, then
+ *      $50/mo for 5K. Primary path when SERPAPI_KEY is configured.
+ *   2. **Travelpayouts** — real cached prices from Aviasales, includes
+ *      affiliate marker for revenue. Free, but spotty coverage —
+ *      mostly major routes from US East Coast hubs.
+ *   3. **Amadeus** — real live prices from Self-Service API. Being
  *      decommissioned by Amadeus on 2026-07-17 but kept as a backstop
  *      in case we have a key set.
- *   3. **Claude masked stubs** — last-resort fallback when no real-data
- *      provider is configured. Replaces the invented price with the
- *      string "See live prices" so users aren't misled, then funnels
- *      them through the Skyscanner deep-link for real numbers.
+ *   4. **Claude masked stubs** — last-resort fallback when no real-data
+ *      provider is configured / all returned empty. Replaces the
+ *      invented price with the string "See live prices" so users aren't
+ *      misled, then funnels them through the Skyscanner deep-link.
  *
  * The result of every path is run through postProcessFlights so the
  * Skyscanner-fallback URL uses any pinned-airport overrides from the
@@ -757,10 +762,14 @@ function postProcessFlights(
  */
 function pickFlights(
   body: GenerateRequest,
+  serpapi: Flight[] | null,
   travelpayouts: Flight[] | null,
   amadeus: Flight[] | null,
   claudeFlights: Flight[]
 ): Flight[] {
+  if (serpapi && serpapi.length > 0) {
+    return postProcessFlights(body, serpapi);
+  }
   if (travelpayouts && travelpayouts.length > 0) {
     return postProcessFlights(body, travelpayouts);
   }
@@ -1051,14 +1060,18 @@ export async function POST(request: NextRequest) {
           shareId,
         });
 
-        // Kick off all 5 work streams in parallel:
+        // Kick off 6 work streams in parallel:
         //   - hero image (Wikipedia, ~200ms)
-        //   - real flight prices via Travelpayouts (~200ms; null if not configured)
-        //   - real flight prices via Amadeus (~500-1500ms; null if not configured)
+        //   - real flight prices via SerpAPI Google Flights (~3-5s; primary)
+        //   - real flight prices via Travelpayouts cached (~200ms; secondary)
+        //   - real flight prices via Amadeus (~500-1500ms; backstop)
         //   - days array (Claude, ~10-15s)
-        //   - booking data (Claude, ~3-5s) — used for hotels/tours/tips
-        //     and as a last-resort fallback for flights
+        //   - booking data (Claude, ~3-5s) — hotels/tours/tips + last-resort
         const heroPromise = fetchHeroImage(body.destination);
+        const serpapiPromise = fetchSerpApiFlights(body).catch((e) => {
+          console.warn("[generate] SerpAPI flights failed:", e);
+          return null;
+        });
         const travelpayoutsPromise = fetchTravelpayoutsFlights(body).catch((e) => {
           console.warn("[generate] Travelpayouts flights failed:", e);
           return null;
@@ -1076,13 +1089,19 @@ export async function POST(request: NextRequest) {
         });
 
         // Booking usually finishes before days because the response is smaller.
-        // Wait for the flight providers too so the flights array carries real
+        // Wait for ALL flight providers so the flights array carries real
         // prices when available; otherwise fall back to Claude's invented
         // (but masked) flight stubs.
-        Promise.all([bookingPromise, travelpayoutsPromise, amadeusPromise])
-          .then(([booking, tpFlights, amadeusFlights]) => {
+        Promise.all([
+          bookingPromise,
+          serpapiPromise,
+          travelpayoutsPromise,
+          amadeusPromise,
+        ])
+          .then(([booking, serpFlights, tpFlights, amadeusFlights]) => {
             const flightsForUi = pickFlights(
               body,
+              serpFlights,
               tpFlights,
               amadeusFlights,
               booking.flights
@@ -1100,7 +1119,7 @@ export async function POST(request: NextRequest) {
             send({
               type: "booking",
               hotels: [],
-              flights: pickFlights(body, null, null, []),
+              flights: pickFlights(body, null, null, null, []),
               tours: [],
               tips: [],
               error: e instanceof Error ? e.message : "booking failed",
@@ -1108,9 +1127,10 @@ export async function POST(request: NextRequest) {
           });
 
         // Days finishes last
-        const [heroImage, tpFlights, amadeusFlights, days, booking] =
+        const [heroImage, serpFlights, tpFlights, amadeusFlights, days, booking] =
           await Promise.all([
             heroPromise.catch(() => null),
+            serpapiPromise,
             travelpayoutsPromise,
             amadeusPromise,
             daysPromise,
@@ -1122,9 +1142,10 @@ export async function POST(request: NextRequest) {
             })),
           ]);
 
-        // Real flights (Travelpayouts → Amadeus → Claude masked) priority chain.
+        // Real flights priority chain: SerpAPI → Travelpayouts → Amadeus → Claude masked.
         const finalFlights = pickFlights(
           body,
+          serpFlights,
           tpFlights,
           amadeusFlights,
           booking.flights
