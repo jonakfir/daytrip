@@ -84,7 +84,22 @@ Return ONLY this JSON object (no other text):
       maxTokens: 1000,
     });
 
-    const parsed = JSON.parse(stripFences(text)) as Activity;
+    let parsed: Activity;
+    try {
+      parsed = JSON.parse(stripFences(text)) as Activity;
+    } catch (err) {
+      console.error(
+        "[swap-activity] Claude returned malformed JSON:",
+        text.slice(0, 500)
+      );
+      return NextResponse.json(
+        {
+          error:
+            "Claude returned an invalid activity format. Please try swapping again.",
+        },
+        { status: 502 }
+      );
+    }
 
     // Preserve the original time slot as a hard guarantee
     const swapped: Activity = {

@@ -296,14 +296,32 @@ Rules: 2 activities per block. Real ${req.destination} place names. Keep all tex
     jsonStr = fenceMatch[1].trim();
   }
 
-  const parsed = JSON.parse(jsonStr);
+  let parsed: {
+    days?: unknown[];
+    hotels?: unknown[];
+    flights?: unknown[];
+    tours?: unknown[];
+    tips?: unknown[];
+  };
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (err) {
+    console.error(
+      "[generate] Claude returned malformed JSON:",
+      jsonStr.slice(0, 500)
+    );
+    throw new Error(
+      "Claude returned an invalid itinerary format. Please try again."
+    );
+  }
 
   return {
-    days: parsed.days ?? [],
-    hotels: parsed.hotels ?? [],
-    flights: externalData.flights ?? parsed.flights ?? [],
-    tours: parsed.tours ?? [],
-    tips: parsed.tips ?? [],
+    days: (parsed.days as DayPlan[]) ?? [],
+    hotels: (parsed.hotels as Hotel[]) ?? [],
+    flights:
+      externalData.flights ?? (parsed.flights as Flight[]) ?? [],
+    tours: (parsed.tours as ViatorTour[]) ?? [],
+    tips: (parsed.tips as string[]) ?? [],
   };
 }
 
@@ -326,7 +344,7 @@ async function storeItinerary(
       travelers: itinerary.travelers,
       travel_style: itinerary.travelStyle,
       budget: itinerary.budget,
-      data: itinerary,
+      itinerary_data: itinerary,
       view_count: 0,
     });
 
