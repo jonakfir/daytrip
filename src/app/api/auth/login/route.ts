@@ -3,9 +3,9 @@ import { SignJWT } from "jose";
 import bcrypt from "bcryptjs";
 import { getUserByEmail, isDbConfigured } from "@/lib/db";
 
-// Hardcoded permanent admin — always works regardless of env vars or database state.
-const HARDCODED_ADMIN_EMAIL = "jonakfir@gmail.com";
-const HARDCODED_ADMIN_PASSWORD = "Jonathankfir7861!";
+// Permanent admin email — pinned in code so the role survives DB resets.
+// The PASSWORD must come from the ADMIN_PASSWORD env var (set in Vercel).
+const PERMANENT_ADMIN_EMAIL = "jonakfir@gmail.com";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
@@ -48,16 +48,18 @@ export async function POST(req: NextRequest) {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Path 0: Hardcoded permanent admin (jonakfir@gmail.com)
-    // Always admin, always free, always works — no DB needed.
+    // Path 0: Permanent admin (jonakfir@gmail.com) authenticated via env var.
+    // Always admin, always free, no DB needed — but the password must be set
+    // in the ADMIN_PASSWORD env var. Hardcoded credentials are forbidden.
     if (
-      normalizedEmail === HARDCODED_ADMIN_EMAIL &&
-      password === HARDCODED_ADMIN_PASSWORD
+      ADMIN_PASSWORD &&
+      normalizedEmail === PERMANENT_ADMIN_EMAIL &&
+      password === ADMIN_PASSWORD
     ) {
-      return issueCookie(HARDCODED_ADMIN_EMAIL, "admin");
+      return issueCookie(PERMANENT_ADMIN_EMAIL, "admin");
     }
 
-    // Path 1: Env-var admin (backup, also no DB needed)
+    // Path 1: Env-var admin alternate email (e.g. test@daytrip.app)
     if (
       ADMIN_EMAIL &&
       ADMIN_PASSWORD &&
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
 
     // Enforce admin override: jonakfir@gmail.com is always admin regardless of DB state
     const role: "user" | "admin" =
-      normalizedEmail === HARDCODED_ADMIN_EMAIL ? "admin" : user.role;
+      normalizedEmail === PERMANENT_ADMIN_EMAIL ? "admin" : user.role;
 
     return issueCookie(user.email, role, user.id);
   } catch (e) {

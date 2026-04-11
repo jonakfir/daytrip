@@ -3,18 +3,40 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Mail, MessageCircle, Send, CheckCircle } from "lucide-react";
+import { Mail, MessageCircle, Send, CheckCircle, Loader2 } from "lucide-react";
 
 export default function ContactPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In production, this would POST to /api/contact and send via Resend/SendGrid
-    setSubmitted(true);
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, message }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Request failed (${res.status})`);
+      }
+      setSubmitted(true);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't send your message. Please try again or email hello@daytrip.travel."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleReset = () => {
@@ -22,6 +44,7 @@ export default function ContactPage() {
     setEmail("");
     setMessage("");
     setSubmitted(false);
+    setError(null);
   };
 
   return (
@@ -114,12 +137,30 @@ export default function ContactPage() {
                     required
                   />
                 </div>
+                {error && (
+                  <p
+                    role="alert"
+                    className="text-body-sm font-sans text-terracotta-600 bg-terracotta-500/10 border border-terracotta-500/20 rounded-xl px-4 py-3"
+                  >
+                    {error}
+                  </p>
+                )}
                 <button
                   type="submit"
-                  className="w-full flex items-center justify-center gap-2 bg-terracotta-500 hover:bg-terracotta-600 text-white font-sans font-medium py-3 rounded-xl transition-colors"
+                  disabled={submitting}
+                  className="w-full flex items-center justify-center gap-2 bg-terracotta-500 hover:bg-terracotta-600 disabled:bg-terracotta-500/60 disabled:cursor-not-allowed text-white font-sans font-medium py-3 rounded-xl transition-colors"
                 >
-                  <Send className="w-4 h-4" />
-                  Send Message
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Sending…
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Send Message
+                    </>
+                  )}
                 </button>
               </form>
             )}
