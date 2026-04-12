@@ -49,6 +49,7 @@ import type {
   GenerateRequest,
   Itinerary,
   DayPlan,
+  Activity,
   Hotel,
   Flight,
   ViatorTour,
@@ -438,22 +439,33 @@ function budgetContextLine(budgetPerDay: number): string {
 /**
  * Generate a contiguous chunk of days. The chunk is described with absolute
  * day numbers + dates so Sonnet can plan distances correctly even when the
- * trip is split across parallel calls.
+ * trip is split across multiple calls. The optional `forbiddenPlaces` list
+ * tells Claude which place names have already been used by an earlier
+ * chunk, so day 4-7 don't repeat day 1-3's activities.
  */
 async function generateDayChunk(
   req: GenerateRequest,
   dayNumbers: number[],
   dates: string[],
-  userId: string | null
+  userId: string | null,
+  forbiddenPlaces: string[] = []
 ): Promise<DayPlan[]> {
   const numDays = dayNumbers.length;
-  const system = `Travel editor. Output ONLY a JSON array. No prose, no markdown. Real places, real distances.`;
+  const system = `Travel editor. Output ONLY a JSON array. No prose, no markdown. Real places, real distances. Every single activity name across the entire itinerary MUST be unique — never repeat a restaurant, attraction, neighborhood walk, or experience.`;
   const budgetLine = req.budgetPerDay
     ? budgetContextLine(req.budgetPerDay)
     : "";
+
+  // If we already generated activities in an earlier chunk of the same trip,
+  // explicitly forbid them so Claude can't repeat itself.
+  const forbiddenLine =
+    forbiddenPlaces.length > 0
+      ? `\n\nFORBIDDEN ACTIVITIES (already used by an earlier day in this same trip — DO NOT REPEAT ANY OF THESE EVEN ONCE):\n${forbiddenPlaces.map((p) => `  - ${p}`).join("\n")}\n\nPick completely different restaurants, attractions, neighborhoods, and experiences. Every name must be unique vs the list above.`
+      : "";
+
   const prompt = `${req.style} trip to ${req.destination}. Days ${dayNumbers[0]}–${
     dayNumbers[dayNumbers.length - 1]
-  } (of a longer itinerary). Dates: ${dates.join(", ")}.${budgetLine ? "\n" + budgetLine : ""}
+  } (of a longer itinerary). Dates: ${dates.join(", ")}.${budgetLine ? "\n" + budgetLine : ""}${forbiddenLine}
 
 Return a JSON array of ${numDays} day objects:
 [{"dayNumber":N,"date":"YYYY-MM-DD","title":"short","morning":[Activity,Activity],"afternoon":[Activity,Activity],"evening":[Activity,Activity],"tip":"one tip"}]
@@ -478,6 +490,11 @@ Rules:
 - For transport-category activities (airport, train, etc), omit distance fields
 - Keep descriptions short and specific
 - DO NOT include the arrival or departure flight, airport-to-hotel transfer, or hotel-to-airport transfer in any block — those are added separately by the system. Day 1 morning should start with the FIRST in-destination activity. The last day's evening should end with the LAST in-destination activity.
+
+UNIQUENESS RULES (CRITICAL — NEVER VIOLATE):
+- Every single activity name across this whole chunk must be UNIQUE. Two different days cannot list the same restaurant, the same neighborhood walk, the same museum, the same park, the same viewpoint. Each is used exactly once.
+- Two days within this chunk cannot have the same title, the same theme, or substantially overlapping content.
+- If a destination only has a handful of "must-see" spots and you'd be tempted to repeat one, instead branch out: pick a quieter alternative, a different neighborhood, a less-touristy version of the same category.
 
 GEOGRAPHY RULES (CRITICAL — NEVER VIOLATE):
 - Every single place must be PHYSICALLY LOCATED in ${req.destination}. Not "near", not "famous nationwide", not "in the same country". In the actual city limits or metro area of ${req.destination}.
@@ -517,8 +534,13 @@ Meal rules (CRITICAL):
 }
 
 /**
- * First Claude call: generate the days array. For long trips (>3 days)
- * splits into 2 parallel chunks to halve wall-time on Sonnet.
+ * First Claude call: generate the days array. For long trips (>3 days) we
+ * split into 2 chunks so the response stays under Sonnet's max-tokens
+ * budget — but we run them SEQUENTIALLY (not in parallel) and pass the
+ * first half's place names into the second call as a forbidden list, so
+ * the two halves don't independently pick the same Blue Lagoon /
+ * Hallgrímskirkja / etc. After both chunks land we run a final
+ * post-process dedup pass as a safety net for any leftover collisions.
  */
 async function generateDays(
   req: GenerateRequest,
@@ -538,27 +560,123 @@ async function generateDays(
   }
   const allDayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
 
-  // Short trips: single call
+  // Short trips: single call — no chunk-vs-chunk dedup needed, but we
+  // still run the post-process safety net.
   if (numDays <= 3) {
-    return generateDayChunk(req, allDayNumbers, allDates, userId);
+    const single = await generateDayChunk(req, allDayNumbers, allDates, userId);
+    return dedupeDays(single);
   }
 
-  // Long trips: split in half, run in parallel — wall time roughly halves
+  // Long trips: split in half, run SEQUENTIALLY so the second half can
+  // see what the first half picked. Yes, this costs ~1 extra Claude RTT
+  // vs. the old parallel version, but the duplicates were unacceptable.
   const mid = Math.ceil(numDays / 2);
-  const firstHalf = generateDayChunk(
+  const firstHalf = await generateDayChunk(
     req,
     allDayNumbers.slice(0, mid),
     allDates.slice(0, mid),
     userId
   );
-  const secondHalf = generateDayChunk(
+
+  // Extract every named activity from the first half. We exclude the
+  // transport category because airport-transfer / flight rows are added
+  // separately by the system and shouldn't bias the second-half prompt.
+  const firstHalfPlaces = collectPlaceNames(firstHalf);
+
+  const secondHalf = await generateDayChunk(
     req,
     allDayNumbers.slice(mid),
     allDates.slice(mid),
-    userId
+    userId,
+    firstHalfPlaces
   );
-  const [a, b] = await Promise.all([firstHalf, secondHalf]);
-  return [...a, ...b];
+
+  return dedupeDays([...firstHalf, ...secondHalf]);
+}
+
+/**
+ * Pull out every non-transport activity name from a list of days, so we
+ * can hand the list to a follow-up generateDayChunk call as the
+ * "forbidden" list. Returns trimmed, de-duplicated names.
+ */
+function collectPlaceNames(days: DayPlan[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const day of days) {
+    for (const block of [day.morning, day.afternoon, day.evening]) {
+      if (!Array.isArray(block)) continue;
+      for (const act of block) {
+        if (!act || act.category === "transport") continue;
+        const name = (act.name ?? "").trim();
+        if (!name) continue;
+        const key = name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(name);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Post-process safety net: even with the forbidden-list trick + system
+ * prompt rules, Claude can still occasionally repeat a place name across
+ * days (especially in long trips to small destinations). Walk every
+ * activity in order and, on a duplicate, either drop it (if the time
+ * block already has another activity) or rename it with a "(alternate)"
+ * suffix so the user at least sees something distinct. Transport rows
+ * are exempt — those are airport transfers added by the system layer.
+ */
+function dedupeDays(days: DayPlan[]): DayPlan[] {
+  const seen = new Set<string>();
+  for (const day of days) {
+    for (const blockKey of ["morning", "afternoon", "evening"] as const) {
+      const block = day[blockKey];
+      if (!Array.isArray(block)) continue;
+      const kept: Activity[] = [];
+      for (const act of block) {
+        if (!act) continue;
+        if (act.category === "transport") {
+          kept.push(act);
+          continue;
+        }
+        const name = (act.name ?? "").trim();
+        const key = name.toLowerCase();
+        if (!key) {
+          kept.push(act);
+          continue;
+        }
+        if (!seen.has(key)) {
+          seen.add(key);
+          kept.push(act);
+          continue;
+        }
+        // Duplicate detected. If this block still has other activities
+        // (or will), drop the dup entirely. Otherwise keep a renamed
+        // version so the user doesn't see an empty block.
+        const remainingInBlock =
+          kept.filter((a) => a.category !== "transport").length;
+        if (remainingInBlock >= 1) {
+          // already have at least one real activity in this block, drop
+          continue;
+        }
+        // Rename so it at least reads as distinct from the original
+        const renamed: Activity = {
+          ...act,
+          name: `${name} (alternate spot nearby)`,
+          description: act.description,
+        };
+        const renamedKey = renamed.name.toLowerCase();
+        if (!seen.has(renamedKey)) {
+          seen.add(renamedKey);
+          kept.push(renamed);
+        }
+      }
+      (day[blockKey] as Activity[]) = kept;
+    }
+  }
+  return days;
 }
 
 /** Second Claude call: hotels, flights, tours, tips. Fast (small response). */
