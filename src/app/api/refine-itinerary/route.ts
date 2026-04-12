@@ -125,91 +125,68 @@ export async function POST(req: NextRequest) {
       })),
     };
 
-    const systemPrompt = `You are a travel editor helping a traveler refine their itinerary. The user will describe a change they want (e.g. "make day 2 more relaxing", "swap the sushi dinner for vegetarian", "add a Harry Potter tour on day 3"). You respond with a friendly 1-sentence reply explaining what you changed, PLUS the updated "days" array in JSON.
-
-Output format — this is critical. Respond with:
-1. A single line: REPLY: <your 1-sentence friendly reply>
-2. A line with just: JSON:
-3. The updated days array as valid JSON (an array, not an object)
-
-Example:
-REPLY: I swapped the afternoon sushi for a vegetarian omakase at Nagi Shokudo in Shibuya.
-JSON:
-[{"dayNumber":1,"date":"...","title":"...","morning":[...],"afternoon":[...],"evening":[...],"tip":"..."}]
+    const systemPrompt = `Travel editor. Output ONLY a single JSON object. No prose, no markdown fences, no explanation outside the JSON. The JSON object has exactly two keys: "reply" (a friendly 1-sentence string explaining what you changed) and "days" (the full updated days array).
 
 STRICT RULES:
-- Only modify what the user asked about. Preserve everything else.
-- GEOGRAPHY (CRITICAL): Every place you suggest MUST be physically located IN the destination city from the itinerary. Not "near", not "in the same country", not "famous nationally". If the itinerary is New York, suggest only places in New York — do NOT suggest Zahav (Philadelphia), restaurants from LA, or anywhere outside NYC. If you aren't 100% certain a place is in the destination, pick a different real place you ARE certain about.
+- Only modify what the user asked about. Preserve everything else exactly.
+- GEOGRAPHY (CRITICAL): Every place you suggest MUST be physically located IN the destination city. Not "near", not "in the same country". If you aren't 100% certain a place is in the destination, pick a different real place you ARE certain about.
 - Use real place names that actually exist in the destination city.
-- In the REPLY, only reference activity names that EXACTLY appeared in the provided itinerary JSON below. Never invent or guess the name of an activity you're replacing. If you don't remember the exact original name, describe the replacement only (e.g. "Added Breads Bakery on Day 2 morning" instead of "Replaced X with Breads Bakery").
-- Meal timing: morning food = breakfast/brunch, afternoon food = lunch, evening food = dinner. Don't put steak at breakfast or bagels at dinner.`;
+- Meal timing: morning food = breakfast/brunch, afternoon food = lunch, evening food = dinner.`;
 
     const userPrompt = `Current itinerary for ${compactItinerary.destination}:
 ${JSON.stringify(compactItinerary, null, 2)}
 
 User's request: ${body.message.trim()}
 
-Update the days array accordingly. Keep activities not mentioned unchanged. Each Activity needs: time (HH:MM), name, category (food|culture|shopping|nature|entertainment|transport), description (1-2 sentences), duration.
+Respond with a single JSON object (no markdown, no code fences, no text outside the JSON):
+{"reply":"one sentence about what you changed","days":[...the full updated days array...]}
 
-Remember: in your REPLY line, ONLY reference activity names that appear in the JSON above. If you're replacing something, use its exact original name.`;
+Each Activity needs: time (HH:MM), name, category (food|culture|shopping|nature|entertainment|transport), description (1-2 sentences), duration.
+Keep activities not mentioned unchanged. Every place must be real and in ${compactItinerary.destination}.`;
 
     const { text, usage } = await callClaudeWithUsage({
       system: systemPrompt,
       prompt: userPrompt,
       model: "claude-sonnet-4-6",
-      maxTokens: 4000,
+      maxTokens: 8000,
     });
     if (userId && !admin) {
       addClaudeUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
     }
 
-    // Parse the REPLY + JSON format
-    const replyMatch = text.match(/REPLY:\s*([^\n]+)/i);
-    const jsonMatch = text.match(/JSON:\s*([\s\S]+)/i);
-
-    let reply = replyMatch?.[1]?.trim() ?? "Itinerary updated.";
+    // Parse the JSON object — Claude should return {"reply":"...","days":[...]}
+    let reply = "Itinerary updated.";
     let newDays: typeof body.itinerary.days | null = null;
     let parseError: string | null = null;
 
-    if (jsonMatch) {
-      try {
-        const jsonStr = stripFences(jsonMatch[1]);
-        const parsed = JSON.parse(jsonStr);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          newDays = parsed;
+    try {
+      const cleaned = stripFences(text);
+      const parsed = JSON.parse(cleaned);
+      if (parsed && typeof parsed === "object") {
+        if (typeof parsed.reply === "string") reply = parsed.reply;
+        if (Array.isArray(parsed.days) && parsed.days.length > 0) {
+          newDays = parsed.days;
         } else {
-          parseError = "Claude returned a non-array or empty days value";
-        }
-      } catch (e) {
-        parseError = e instanceof Error ? e.message : "JSON parse failed";
-        // Fallback: try to find a bare JSON array anywhere in the response
-        const bareJson = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
-        if (bareJson) {
-          try {
-            const parsed = JSON.parse(bareJson[0]);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              newDays = parsed;
-              parseError = null;
-            }
-          } catch {
-            // give up
-          }
-        }
-      }
-    } else {
-      // No JSON: try to find a bare array anywhere in the response
-      const bareJson = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      if (bareJson) {
-        try {
-          const parsed = JSON.parse(bareJson[0]);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            newDays = parsed;
-          }
-        } catch {
-          parseError = "No JSON section and no bare array found";
+          parseError = "Parsed JSON but 'days' was empty or missing";
         }
       } else {
-        parseError = "Claude response missing JSON section";
+        parseError = "Parsed JSON but not an object";
+      }
+    } catch (e) {
+      parseError = e instanceof Error ? e.message : "JSON parse failed";
+      // Fallback: try to extract a JSON object from mixed prose + JSON
+      const objMatch = text.match(/\{[\s\S]*"days"\s*:\s*\[[\s\S]*\]\s*\}/);
+      if (objMatch) {
+        try {
+          const parsed = JSON.parse(objMatch[0]);
+          if (typeof parsed.reply === "string") reply = parsed.reply;
+          if (Array.isArray(parsed.days) && parsed.days.length > 0) {
+            newDays = parsed.days;
+            parseError = null;
+          }
+        } catch {
+          // give up
+        }
       }
     }
 
