@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Loader2,
 } from "lucide-react";
+import { useIsNativeApp } from "@/lib/useIsNativeApp";
 
 const FEATURES = [
   { icon: MapPin, text: "Real, day-by-day itinerary with attractions" },
@@ -34,6 +35,7 @@ function PricingContent() {
   const [credits, setCredits] = useState<CreditState | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const status = searchParams.get("status"); // "success" | "cancel" | null
+  const isNative = useIsNativeApp();
 
   useEffect(() => {
     fetch("/api/me/credits")
@@ -86,6 +88,61 @@ function PricingContent() {
       buyTrip();
     }
   };
+
+  if (isNative) {
+    const balanceLabel = credits?.isAdmin
+      ? "Unlimited trips"
+      : credits?.authenticated
+      ? `${credits.credits} trip${credits.credits === 1 ? "" : "s"} available`
+      : "Sign up to start planning";
+    return (
+      <div className="min-h-screen bg-cream-50 flex flex-col">
+        <header className="px-6 py-6">
+          <Link
+            href="/"
+            className="font-serif text-heading-lg text-charcoal-900"
+          >
+            Daytrip
+          </Link>
+        </header>
+        <main className="flex-1 px-6 flex items-center justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="max-w-md w-full text-center"
+          >
+            <h1 className="font-serif text-display text-charcoal-900 mb-3">
+              Your trips
+            </h1>
+            <div className="bg-white rounded-3xl shadow-card border border-cream-200 p-8 mb-6">
+              <div className="font-sans text-caption text-charcoal-800/50 uppercase tracking-wider mb-2">
+                Balance
+              </div>
+              <div className="font-serif text-display-lg text-charcoal-900">
+                {balanceLabel}
+              </div>
+            </div>
+            {credits?.authenticated ? (
+              <button
+                onClick={() => router.push("/")}
+                className="w-full py-4 px-6 rounded-2xl bg-terracotta-500 hover:bg-terracotta-600 text-white font-sans font-medium shadow-card transition-all"
+              >
+                Plan a trip
+              </button>
+            ) : (
+              <button
+                onClick={() => router.push("/signup?next=/")}
+                className="w-full py-4 px-6 rounded-2xl bg-terracotta-500 hover:bg-terracotta-600 text-white font-sans font-medium shadow-card transition-all"
+              >
+                Sign up — first trip free
+              </button>
+            )}
+          </motion.div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-cream-50">

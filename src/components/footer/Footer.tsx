@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { getFeaturedDestinations } from "@/lib/destinations";
+import { useIsNativeApp } from "@/lib/useIsNativeApp";
 
 const productLinks = [
   { label: "Plan a Trip", href: "/#plan" },
@@ -34,6 +35,10 @@ const fadeIn = {
 };
 
 export default function Footer() {
+  const isNative = useIsNativeApp();
+  const visibleProductLinks = isNative
+    ? productLinks.filter((l) => l.href !== "/pricing")
+    : productLinks;
   return (
     <footer className="bg-charcoal-900 px-6 py-16 md:px-12 lg:px-20">
       <div className="mx-auto max-w-7xl">
@@ -59,7 +64,7 @@ export default function Footer() {
               Product
             </h4>
             <nav className="flex flex-col gap-3">
-              {productLinks.map((link) => (
+              {visibleProductLinks.map((link) => (
                 <Link
                   key={link.label}
                   href={link.href}

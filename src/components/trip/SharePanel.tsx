@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { X, Link2, Check, MapPin, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { nativeShare } from "@/lib/capacitor";
 
 interface SharePanelProps {
   isOpen: boolean;
@@ -20,6 +21,22 @@ export default function SharePanel({
   duration,
 }: SharePanelProps) {
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      const shown = await nativeShare({
+        title: `${destination} — ${duration} day trip`,
+        text: `Check out my ${duration}-day trip to ${destination}!`,
+        url: shareUrl,
+      });
+      if (shown && !cancelled) onClose();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, shareUrl, destination, duration, onClose]);
 
   const handleCopy = useCallback(async () => {
     try {

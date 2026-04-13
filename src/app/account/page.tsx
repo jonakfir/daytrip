@@ -13,6 +13,7 @@ import {
   Plus,
   Loader2,
 } from "lucide-react";
+import { useIsNativeApp } from "@/lib/useIsNativeApp";
 
 interface Me {
   authenticated: boolean;
@@ -32,6 +33,7 @@ export default function AccountPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [credits, setCredits] = useState<Credits | null>(null);
   const [buying, setBuying] = useState(false);
+  const isNative = useIsNativeApp();
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -161,7 +163,7 @@ export default function AccountPage() {
                   </div>
                 </div>
               </div>
-              {credits && !credits.isAdmin && (
+              {credits && !credits.isAdmin && !isNative && (
                 <button
                   onClick={buyTrip}
                   disabled={buying}

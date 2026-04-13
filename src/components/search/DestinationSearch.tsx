@@ -6,6 +6,7 @@ import { Calendar, Users, Plus, Sparkles, Plane, Wallet, X } from "lucide-react"
 import { cn } from "@/lib/utils";
 import PlaceInput from "@/components/search/PlaceInput";
 import { extractIataFromLabel, getAirportByIATA } from "@/lib/airports";
+import { hapticTap } from "@/lib/capacitor";
 
 interface SearchParams {
   destination: string;
@@ -147,6 +148,7 @@ export default function DestinationSearch({
     e.preventDefault();
     const primary = destinations[0]?.trim();
     if (!primary) return;
+    hapticTap("MEDIUM");
 
     // If the user picked an airport entry (e.g. "JFK · New York (...)") we
     // split the airport code off so the rest of the pipeline still sees

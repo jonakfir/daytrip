@@ -6,6 +6,7 @@ import {
   breadcrumbSchema,
   jsonLdString,
 } from "@/lib/schema";
+import { HideOnNative } from "@/components/NativeGate";
 
 export const metadata: Metadata = {
   title: "All Destinations — AI Travel Itineraries",
@@ -59,12 +60,14 @@ export default function DestinationsIndexPage() {
             >
               Guides
             </Link>
-            <Link
-              href="/pricing"
-              className="hidden sm:block text-body-sm text-charcoal-800/70 hover:text-charcoal-900 transition-colors"
-            >
-              Pricing
-            </Link>
+            <HideOnNative>
+              <Link
+                href="/pricing"
+                className="hidden sm:block text-body-sm text-charcoal-800/70 hover:text-charcoal-900 transition-colors"
+              >
+                Pricing
+              </Link>
+            </HideOnNative>
             <Link
               href="/"
               className="rounded-full bg-terracotta-500 px-5 py-2 text-body-sm font-medium text-white transition-colors hover:bg-terracotta-600"

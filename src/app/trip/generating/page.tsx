@@ -13,6 +13,8 @@ import {
   Check,
 } from "lucide-react";
 import type { Itinerary } from "@/types/itinerary";
+import { useIsNativeApp } from "@/lib/useIsNativeApp";
+import { hapticSuccess } from "@/lib/capacitor";
 
 interface Step {
   key: "hero" | "booking" | "days";
@@ -70,6 +72,7 @@ function GeneratingContent() {
     days: false,
   });
   const [partial, setPartial] = useState<PartialItinerary>({});
+  const isNative = useIsNativeApp();
 
   const destination = searchParams.get("destination") || "your destination";
 
@@ -184,6 +187,7 @@ function GeneratingContent() {
                 }));
                 setCompleted((c) => ({ ...c, days: true }));
               } else if (event.type === "done") {
+                hapticSuccess();
                 const itinerary = event.itinerary as Itinerary;
                 const shareId = itinerary?.shareId ?? "demo";
                 try {
@@ -231,6 +235,29 @@ function GeneratingContent() {
   }, [router, searchParams]);
 
   if (error === "OUT_OF_CREDITS") {
+    if (isNative) {
+      return (
+        <main className="min-h-screen bg-cream-100 flex items-center justify-center px-6">
+          <div className="text-center max-w-md">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-terracotta-500/10 rounded-full mb-6">
+              <Compass className="w-8 h-8 text-terracotta-500" />
+            </div>
+            <h1 className="font-serif text-display text-charcoal-900 mb-3">
+              No trips available
+            </h1>
+            <p className="font-sans text-body text-charcoal-800/70 mb-8 max-w-sm mx-auto">
+              You&apos;ve used all of your trip credits.
+            </p>
+            <button
+              onClick={() => router.push("/")}
+              className="px-6 py-3 bg-terracotta-500 text-white rounded-xl font-sans font-medium hover:bg-terracotta-600 transition-colors"
+            >
+              Back home
+            </button>
+          </div>
+        </main>
+      );
+    }
     const buyTrip = async () => {
       try {
         const returnTo = `/trip/generating?${searchParams.toString()}`;

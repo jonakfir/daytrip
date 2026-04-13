@@ -5,6 +5,7 @@ import { motion, AnimatePresence, useMotionValueEvent, useScroll } from "framer-
 import Link from "next/link";
 import { Menu, Map as MapIcon, Shield, User as UserIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsNativeApp } from "@/lib/useIsNativeApp";
 
 const navLinks = [
   { label: "Destinations", href: "/destinations" },
@@ -12,6 +13,7 @@ const navLinks = [
   { label: "How it works", href: "#how-it-works" },
   { label: "Pricing", href: "/pricing" },
 ];
+const nativeNavLinks = navLinks.filter((l) => l.href !== "/pricing");
 
 interface AuthState {
   authenticated: boolean;
@@ -28,6 +30,8 @@ export default function Navbar() {
     email: null,
   });
   const { scrollY } = useScroll();
+  const isNative = useIsNativeApp();
+  const visibleLinks = isNative ? nativeNavLinks : navLinks;
 
   // Lock scroll when mobile menu is open
   useEffect(() => {
@@ -93,7 +97,7 @@ export default function Navbar() {
 
         <div className="flex items-center gap-6">
           <div className="hidden items-center gap-5 md:flex">
-            {navLinks.map((link) => (
+            {visibleLinks.map((link) => (
               <a
                 key={link.label}
                 href={link.href}
@@ -208,7 +212,7 @@ export default function Navbar() {
               </div>
 
               <nav className="flex flex-col px-6 py-6 gap-1">
-                {navLinks.map((link) => (
+                {visibleLinks.map((link) => (
                   <a
                     key={link.label}
                     href={link.href}
