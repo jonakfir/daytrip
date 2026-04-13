@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Karla } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL, TWITTER_HANDLE } from "@/lib/seo";
@@ -85,6 +85,12 @@ export const metadata: Metadata = {
   verification: {
     google: "3PVU1pfMWUHeT6fKw1DLdbIDmPEqF_m4o5zV9CJm1gU",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

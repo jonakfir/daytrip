@@ -81,6 +81,7 @@ export default function Navbar() {
 
   return (
     <motion.header
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
       className={cn(
         "fixed inset-x-0 top-0 z-50 transition-colors duration-300",
         scrolled
