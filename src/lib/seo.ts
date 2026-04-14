@@ -7,7 +7,7 @@
 
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-  "https://daytrip.app";
+  "https://daytrip-ai.com";
 
 export const SITE_NAME = "Daytrip";
 
@@ -18,7 +18,7 @@ export const SITE_DESCRIPTION =
 
 export const DEFAULT_OG_IMAGE = "/og-image.png";
 
-export const TWITTER_HANDLE = "@daytripapp";
+export const TWITTER_HANDLE = "@DaytripAI";
 
 export function absoluteUrl(path: string = "/"): string {
   if (!path.startsWith("/")) path = `/${path}`;
