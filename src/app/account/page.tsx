@@ -12,6 +12,7 @@ import {
   Ticket,
   Plus,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { useIsNativeApp } from "@/lib/useIsNativeApp";
 
@@ -34,6 +35,10 @@ export default function AccountPage() {
   const [credits, setCredits] = useState<Credits | null>(null);
   const [buying, setBuying] = useState(false);
   const isNative = useIsNativeApp();
+  const [deleteStep, setDeleteStep] = useState<"idle" | "confirm" | "deleting">(
+    "idle"
+  );
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -73,6 +78,22 @@ export default function AccountPage() {
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/");
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleteStep("deleting");
+    setDeleteError(null);
+    try {
+      const res = await fetch("/api/me", { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || data?.error || "Delete failed");
+      }
+      router.push("/?deleted=1");
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Delete failed");
+      setDeleteStep("confirm");
+    }
   };
 
   if (me === null) {
@@ -203,6 +224,67 @@ export default function AccountPage() {
               <LogOut className="w-4 h-4" />
               Log out
             </button>
+          </div>
+
+          <div className="mt-8 pt-6 border-t border-cream-200">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="font-sans text-body-sm font-medium text-charcoal-900">
+                  Delete account
+                </div>
+                <p className="font-sans text-caption text-charcoal-800/60 mt-1 max-w-sm">
+                  Permanently deletes your account, trip credits, and payment
+                  history. This can&apos;t be undone.
+                </p>
+              </div>
+              {deleteStep === "idle" && (
+                <button
+                  onClick={() => setDeleteStep("confirm")}
+                  className="flex items-center gap-2 rounded-full border border-red-500/30 px-4 py-2 font-sans text-caption font-medium text-red-600 hover:bg-red-500/5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete account
+                </button>
+              )}
+            </div>
+
+            {deleteStep !== "idle" && (
+              <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+                <p className="font-sans text-body-sm text-charcoal-900 mb-3">
+                  Are you sure? Your account and all associated data will be
+                  permanently deleted.
+                </p>
+                {deleteError && (
+                  <p className="font-sans text-caption text-red-600 mb-3">
+                    {deleteError}
+                  </p>
+                )}
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={deleteStep === "deleting"}
+                    className="flex items-center gap-1.5 rounded-full bg-red-600 px-4 py-2 font-sans text-caption font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {deleteStep === "deleting" ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    Yes, delete my account
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeleteStep("idle");
+                      setDeleteError(null);
+                    }}
+                    disabled={deleteStep === "deleting"}
+                    className="rounded-full border border-charcoal-800/20 px-4 py-2 font-sans text-caption font-medium text-charcoal-800 hover:bg-cream-100 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </motion.div>

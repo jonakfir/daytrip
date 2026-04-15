@@ -14,6 +14,8 @@ import {
   consumeTripCredit,
   isDbConfigured,
 } from "@/lib/db";
+import { hasAnonCreditLeft, readAnonUsed } from "@/lib/anon-credits";
+import { SignJWT } from "jose";
 import {
   buildSkyscannerFlightUrl,
   buildSkyscannerHotelUrl,
@@ -1081,19 +1083,28 @@ function injectFlightAndAirportTransfers(
 export async function POST(request: NextRequest) {
   // Auth: admin (jonakfir@gmail.com) bypasses credits entirely.
   // Logged-in users need ≥1 trip_credit (decremented atomically below).
-  // Anonymous users get 401.
+  // Anonymous users get FREE_ANON_TRIPS free generations tracked via a
+  // signed httpOnly cookie so the app complies with App Store guideline
+  // 5.1.1(v) (non-account features must be accessible without sign-up).
   const authCookie = request.cookies.get("daytrip-auth")?.value;
   const isAdmin = await isAdminRequest(authCookie);
   const userId = await getCallerUserId(request);
 
-  if (!isAdmin && !userId) {
-    return NextResponse.json(
-      {
-        error: "auth_required",
-        message: "Sign up to get one free trip.",
-      },
-      { status: 401 }
-    );
+  const isAnon = !isAdmin && !userId;
+  let anonUsed = 0;
+  if (isAnon) {
+    anonUsed = await readAnonUsed(request);
+    if (!hasAnonCreditLeft(anonUsed)) {
+      return NextResponse.json(
+        {
+          error: "anon_limit_reached",
+          message:
+            "You've used your free trip. Sign up to keep planning, or buy 1 trip for $3.",
+          checkoutPath: "/api/stripe/checkout",
+        },
+        { status: 402 }
+      );
+    }
   }
 
   // Parse + validate the body BEFORE consuming any credit. The previous
@@ -1113,9 +1124,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // For non-admin users, atomically consume one trip credit. If they have
-  // none left, return 402 (Payment Required) with a hint to buy more.
-  if (!isAdmin) {
+  // For non-admin, *authed* users, atomically consume one trip credit.
+  // Anonymous callers skip this path — their limit is enforced by the
+  // signed cookie above and the Set-Cookie written on the response below.
+  if (!isAdmin && userId) {
     if (!isDbConfigured()) {
       return NextResponse.json(
         {
@@ -1150,7 +1162,9 @@ export async function POST(request: NextRequest) {
     if (!isAdmin && userId) {
       addTripCredits(userId, 1).catch(() => undefined);
     }
-    return NextResponse.json({ itinerary: MOCK_TOKYO_ITINERARY });
+    const mockRes = NextResponse.json({ itinerary: MOCK_TOKYO_ITINERARY });
+    if (isAnon) await writeAnonCookie(mockRes, anonUsed + 1);
+    return mockRes;
   }
 
   const numDays = daysBetween(body.startDate, body.endDate);
@@ -1335,12 +1349,47 @@ export async function POST(request: NextRequest) {
     },
   });
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-ndjson",
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+  };
+  if (isAnon) {
+    headers["Set-Cookie"] = await buildAnonCookieHeader(anonUsed + 1);
+  }
+
   return new Response(stream, {
     status: 200,
-    headers: {
-      "Content-Type": "application/x-ndjson",
-      "Cache-Control": "no-cache, no-transform",
-      "X-Accel-Buffering": "no",
-    },
+    headers,
   });
+}
+
+async function writeAnonCookie(
+  res: NextResponse,
+  used: number
+): Promise<void> {
+  const token = await signAnonToken(used);
+  res.cookies.set("daytrip-anon", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 365 * 24 * 60 * 60,
+    path: "/",
+  });
+}
+
+async function buildAnonCookieHeader(used: number): Promise<string> {
+  const token = await signAnonToken(used);
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `daytrip-anon=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${
+    365 * 24 * 60 * 60
+  }${secure}`;
+}
+
+async function signAnonToken(used: number): Promise<string> {
+  return new SignJWT({ used })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("365d")
+    .sign(JWT_SECRET);
 }

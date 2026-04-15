@@ -107,7 +107,8 @@ function GeneratingContent() {
         });
 
         if (response.status === 401) {
-          // Not signed in — push to signup with the original params preserved
+          // Fallback: should no longer happen now that anonymous users get
+          // one free trip, but keep the redirect as a safety net.
           router.push(
             `/signup?next=${encodeURIComponent(
               `/trip/generating?${searchParams.toString()}`
@@ -116,8 +117,15 @@ function GeneratingContent() {
           return;
         }
         if (response.status === 402) {
-          // Out of credits — show paywall
-          setError("OUT_OF_CREDITS");
+          // Out of credits. The backend uses the same 402 for both
+          // "anonymous user out of free trips" and "signed-in user out
+          // of paid credits" — the body's `error` field disambiguates.
+          let code: "OUT_OF_CREDITS" | "ANON_LIMIT" = "OUT_OF_CREDITS";
+          try {
+            const body = await response.clone().json();
+            if (body?.error === "anon_limit_reached") code = "ANON_LIMIT";
+          } catch {}
+          setError(code);
           return;
         }
         if (response.status === 403) {
@@ -233,6 +241,50 @@ function GeneratingContent() {
       controller.abort();
     };
   }, [router, searchParams]);
+
+  if (error === "ANON_LIMIT") {
+    const next = `/trip/generating?${searchParams.toString()}`;
+    return (
+      <main className="min-h-screen bg-cream-100 flex items-center justify-center px-6">
+        <div className="text-center max-w-md">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-terracotta-500/10 rounded-full mb-6">
+            <Compass className="w-8 h-8 text-terracotta-500" />
+          </div>
+          <h1 className="font-serif text-display text-charcoal-900 mb-3">
+            Keep planning?
+          </h1>
+          <p className="font-sans text-body text-charcoal-800/70 mb-8 max-w-sm mx-auto">
+            You&apos;ve used your free trip. Sign up free to save your
+            itineraries and get another trip, or buy 1 for $3.
+          </p>
+          <div className="flex gap-3 justify-center flex-wrap">
+            <button
+              onClick={() =>
+                router.push(`/signup?next=${encodeURIComponent(next)}`)
+              }
+              className="px-6 py-3 bg-terracotta-500 text-white rounded-xl font-sans font-medium hover:bg-terracotta-600 transition-colors"
+            >
+              Sign up free
+            </button>
+            <button
+              onClick={() =>
+                router.push(`/login?next=${encodeURIComponent(next)}`)
+              }
+              className="px-6 py-3 border border-cream-300 text-charcoal-800 rounded-xl font-sans font-medium hover:bg-cream-100 transition-colors"
+            >
+              Log in
+            </button>
+            <button
+              onClick={() => router.push("/")}
+              className="px-6 py-3 text-charcoal-800/60 rounded-xl font-sans font-medium hover:text-charcoal-900 transition-colors"
+            >
+              Back home
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (error === "OUT_OF_CREDITS") {
     if (isNative) {
