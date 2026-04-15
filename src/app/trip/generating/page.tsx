@@ -72,6 +72,10 @@ function GeneratingContent() {
     days: false,
   });
   const [partial, setPartial] = useState<PartialItinerary>({});
+  const [dayProgress, setDayProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
   const isNative = useIsNativeApp();
 
   const destination = searchParams.get("destination") || "your destination";
@@ -188,6 +192,11 @@ function GeneratingContent() {
                   tips: event.tips as Itinerary["tips"],
                 }));
                 setCompleted((c) => ({ ...c, booking: true }));
+              } else if (event.type === "progress") {
+                setDayProgress({
+                  completed: event.completedDays as number,
+                  total: event.totalDays as number,
+                });
               } else if (event.type === "days") {
                 setPartial((p) => ({
                   ...p,
@@ -381,9 +390,18 @@ function GeneratingContent() {
     );
   }
 
-  // Compute progress percentage from completed steps
+  // Compute progress percentage from completed steps, with granular
+  // sub-progress within the "days" step based on chunk completion.
   const completedCount = Object.values(completed).filter(Boolean).length;
-  const progress = (completedCount / STEPS.length) * 100;
+  const baseProgress = (completedCount / STEPS.length) * 100;
+  const daysStepWeight = (1 / STEPS.length) * 100;
+  const chunkFraction = dayProgress
+    ? dayProgress.completed / dayProgress.total
+    : 0;
+  const progress =
+    !completed.days && dayProgress
+      ? baseProgress + daysStepWeight * chunkFraction
+      : baseProgress;
 
   // Find which step is active (first incomplete)
   const activeStepKey = STEPS.find((s) => !completed[s.key])?.key;
@@ -456,7 +474,11 @@ function GeneratingContent() {
                         exit={{ opacity: 0, height: 0 }}
                         className="text-body-sm text-charcoal-800/50"
                       >
-                        {step.sublabel}
+                        {step.key === "days" && dayProgress
+                          ? dayProgress.completed >= dayProgress.total
+                            ? "Finalizing itinerary..."
+                            : `Generating days ${dayProgress.completed + 1}\u2013${Math.min(dayProgress.completed + 7, dayProgress.total)} of ${dayProgress.total}...`
+                          : step.sublabel}
                       </motion.p>
                     )}
                   </AnimatePresence>

@@ -25,6 +25,7 @@ import { fetchTravelpayoutsFlights } from "@/lib/travelpayouts";
 import { fetchSerpApiFlights } from "@/lib/serpapi";
 
 import { JWT_SECRET } from "@/lib/jwt-secret";
+import { MAX_TRIP_DAYS } from "@/lib/constants";
 
 interface JwtPayload {
   email?: string;
@@ -459,10 +460,11 @@ async function generateDayChunk(
     : "";
 
   // If we already generated activities in an earlier chunk of the same trip,
-  // explicitly forbid them so Claude can't repeat itself.
+  // explicitly forbid them so Claude can't repeat itself. Uses compact
+  // comma-separated format to save tokens on long trips.
   const forbiddenLine =
     forbiddenPlaces.length > 0
-      ? `\n\nFORBIDDEN ACTIVITIES (already used by an earlier day in this same trip — DO NOT REPEAT ANY OF THESE EVEN ONCE):\n${forbiddenPlaces.map((p) => `  - ${p}`).join("\n")}\n\nPick completely different restaurants, attractions, neighborhoods, and experiences. Every name must be unique vs the list above.`
+      ? `\n\nFORBIDDEN (already used in this trip — never repeat): ${forbiddenPlaces.join(", ")}\n\nPick completely different restaurants, attractions, neighborhoods, and experiences.`
       : "";
 
   const prompt = `${req.style} trip to ${req.destination}. Days ${dayNumbers[0]}–${
@@ -511,11 +513,15 @@ Meal rules (CRITICAL):
 - Match cuisine to the time of day: no steak for breakfast, no cereal for dinner, no kaiseki at 9am.
 - If a famous spot is all-day, still pick the time block where it makes most sense.`;
 
+  // Scale token budget with chunk size: ~600 tokens per day covers 6
+  // activities with all their fields. Capped at 8000 to stay reasonable.
+  const maxTokens = Math.min(numDays * 600, 8000);
+
   const { text, usage } = await callClaudeWithUsage({
     system,
     prompt,
     model: "claude-sonnet-4-6",
-    maxTokens: 3500,
+    maxTokens,
   });
   if (userId) {
     addClaudeUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
@@ -536,19 +542,29 @@ Meal rules (CRITICAL):
 }
 
 /**
- * First Claude call: generate the days array. For long trips (>3 days) we
- * split into 2 chunks so the response stays under Sonnet's max-tokens
- * budget — but we run them SEQUENTIALLY (not in parallel) and pass the
- * first half's place names into the second call as a forbidden list, so
- * the two halves don't independently pick the same Blue Lagoon /
- * Hallgrímskirkja / etc. After both chunks land we run a final
+ * First Claude call: generate the days array. For long trips (>7 days) we
+ * split into sequential chunks of up to 7 days each, passing an
+ * accumulated forbidden-places list so later chunks never repeat
+ * activities from earlier ones. After all chunks land we run a final
  * post-process dedup pass as a safety net for any leftover collisions.
+ *
+ * 7-day chunks keep each Claude call well under the max-tokens budget
+ * and total wall-clock time under the 300s Vercel limit even for
+ * month-long trips (e.g. 60 days = 9 chunks x ~12s each = ~108s).
  */
 async function generateDays(
   req: GenerateRequest,
   numDays: number,
-  userId: string | null
+  userId: string | null,
+  onChunkComplete?: (completedDays: number, totalDays: number) => void
 ): Promise<DayPlan[]> {
+  const CHUNK_SIZE = 7;
+  const MAX_RETRIES = 3;
+  // Only pass the last WINDOW_CHUNKS chunks' places as forbidden.
+  // Keeps the prompt lean on long trips while still preventing duplicates
+  // within the same city. dedupeDays() catches anything further back.
+  const WINDOW_CHUNKS = 3;
+
   // Build absolute date list
   const allDates: string[] = [];
   const [sy, sm, sd] = req.startDate.split("-").map(Number);
@@ -564,36 +580,50 @@ async function generateDays(
 
   // Short trips: single call — no chunk-vs-chunk dedup needed, but we
   // still run the post-process safety net.
-  if (numDays <= 3) {
+  if (numDays <= CHUNK_SIZE) {
     const single = await generateDayChunk(req, allDayNumbers, allDates, userId);
+    onChunkComplete?.(numDays, numDays);
     return dedupeDays(single);
   }
 
-  // Long trips: split in half, run SEQUENTIALLY so the second half can
-  // see what the first half picked. Yes, this costs ~1 extra Claude RTT
-  // vs. the old parallel version, but the duplicates were unacceptable.
-  const mid = Math.ceil(numDays / 2);
-  const firstHalf = await generateDayChunk(
-    req,
-    allDayNumbers.slice(0, mid),
-    allDates.slice(0, mid),
-    userId
-  );
+  // Long trips: split into sequential chunks of up to CHUNK_SIZE days.
+  // Each chunk receives a windowed forbidden-places list from recent
+  // chunks so activities are never repeated within the same stretch.
+  const allDays: DayPlan[] = [];
 
-  // Extract every named activity from the first half. We exclude the
-  // transport category because airport-transfer / flight rows are added
-  // separately by the system and shouldn't bias the second-half prompt.
-  const firstHalfPlaces = collectPlaceNames(firstHalf);
+  for (let offset = 0; offset < numDays; offset += CHUNK_SIZE) {
+    const end = Math.min(offset + CHUNK_SIZE, numDays);
 
-  const secondHalf = await generateDayChunk(
-    req,
-    allDayNumbers.slice(mid),
-    allDates.slice(mid),
-    userId,
-    firstHalfPlaces
-  );
+    // Sliding window: only forbid places from the last WINDOW_CHUNKS
+    // chunks. For multi-city trips the cities diverge naturally; for
+    // single-city trips 21 days of lookback is generous. dedupeDays()
+    // still catches anything that slips through globally.
+    const windowStart = Math.max(0, allDays.length - WINDOW_CHUNKS * CHUNK_SIZE);
+    const forbiddenPlaces = collectPlaceNames(allDays.slice(windowStart));
 
-  return dedupeDays([...firstHalf, ...secondHalf]);
+    // Retry loop: transient Claude failures shouldn't kill the whole trip.
+    let chunk: DayPlan[] | null = null;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        chunk = await generateDayChunk(
+          req,
+          allDayNumbers.slice(offset, end),
+          allDates.slice(offset, end),
+          userId,
+          forbiddenPlaces
+        );
+        break;
+      } catch (e) {
+        if (attempt === MAX_RETRIES - 1) throw e;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+
+    allDays.push(...chunk!);
+    onChunkComplete?.(end, numDays);
+  }
+
+  return dedupeDays(allDays);
 }
 
 /**
@@ -1124,6 +1154,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const requestedDays = daysBetween(body.startDate, body.endDate);
+  if (requestedDays > MAX_TRIP_DAYS) {
+    return NextResponse.json(
+      {
+        error: "trip_too_long",
+        message: `Trip cannot exceed ${MAX_TRIP_DAYS} days. Please choose a shorter date range.`,
+      },
+      { status: 400 }
+    );
+  }
+
   // For non-admin, *authed* users, atomically consume one trip credit.
   // Anonymous callers skip this path — their limit is enforced by the
   // signed cookie above and the Set-Cookie written on the response below.
@@ -1212,7 +1253,14 @@ export async function POST(request: NextRequest) {
           console.warn("[generate] Amadeus flights failed:", e);
           return null;
         });
-        const daysPromise = generateDays(body, numDays, userId);
+        const daysPromise = generateDays(
+          body,
+          numDays,
+          userId,
+          (completedDays, totalDays) => {
+            send({ type: "progress", completedDays, totalDays });
+          }
+        );
         const bookingPromise = generateBookingData(body, userId);
 
         // Hero usually returns first

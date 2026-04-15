@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Calendar, Users, Plus, Sparkles, Plane, Wallet, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MAX_TRIP_DAYS } from "@/lib/constants";
 import PlaceInput from "@/components/search/PlaceInput";
 import { extractIataFromLabel, getAirportByIATA } from "@/lib/airports";
 import { hapticTap } from "@/lib/capacitor";
@@ -86,6 +87,7 @@ export default function DestinationSearch({
   const [style, setStyle] = useState<string>("Cultural");
   // Budget per person per day in USD. Defaults to $150 (moderate).
   const [budgetPerDay, setBudgetPerDay] = useState<number>(150);
+  const [dateError, setDateError] = useState<string | null>(null);
 
   // Typewriter placeholder
   const [placeholderText, setPlaceholderText] = useState("");
@@ -148,6 +150,19 @@ export default function DestinationSearch({
     e.preventDefault();
     const primary = destinations[0]?.trim();
     if (!primary) return;
+
+    // Validate trip length before submitting
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+      if (days > MAX_TRIP_DAYS) {
+        setDateError(`Trips are limited to ${MAX_TRIP_DAYS} days. Please choose a shorter range.`);
+        return;
+      }
+      setDateError(null);
+    }
+
     hapticTap("MEDIUM");
 
     // If the user picked an airport entry (e.g. "JFK · New York (...)") we
@@ -333,10 +348,21 @@ export default function DestinationSearch({
               <input
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setDateError(null);
+                }}
                 min={startDate}
-                className="w-full appearance-none min-h-[44px] px-3 py-2.5 bg-cream-50 border border-cream-200 rounded-xl font-sans text-base text-charcoal-900 focus:outline-none focus:ring-2 focus:ring-terracotta-500/40"
+                className={cn(
+                  "w-full appearance-none min-h-[44px] px-3 py-2.5 bg-cream-50 border rounded-xl font-sans text-base text-charcoal-900 focus:outline-none focus:ring-2 focus:ring-terracotta-500/40",
+                  dateError ? "border-red-400" : "border-cream-200"
+                )}
               />
+              {dateError && (
+                <p className="mt-1 font-sans text-caption text-red-500">
+                  {dateError}
+                </p>
+              )}
             </div>
 
             {/* Travelers */}
