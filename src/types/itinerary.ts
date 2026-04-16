@@ -80,6 +80,13 @@ export interface GenerateRequest {
   endDate: string;
   travelers: number;
   style: string;
+  /** Multi-select trip styles (e.g. ["Cultural", "Relaxation"]). When present
+   *  and non-empty, callers should prefer this over the single `style` field. */
+  styles?: string[];
+  /** Multi-select regions (e.g. ["Eastern Europe", "Balkans"]). When set,
+   *  `destination` is a free-text region label and the generator should pick
+   *  specific cities within those regions. */
+  regions?: string[];
   budget?: string;
   /** City the traveler is departing from (e.g. "New York", "London"). Used to
    *  generate Skyscanner deep-links so flight prices and search results are

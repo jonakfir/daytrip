@@ -58,6 +58,8 @@ export default function LandscapeHero() {
       endDate: string;
       travelers: number;
       style: string;
+      styles: string[];
+      regions: string[];
       originCity: string;
       originAirport?: string;
       destinationAirport?: string;
@@ -70,6 +72,11 @@ export default function LandscapeHero() {
         travelers: String(params.travelers),
         style: params.style,
       });
+      // Arrays are serialized as comma-joined strings — the generating
+      // page and /api/generate route both split them back into arrays.
+      if (params.styles.length > 0) sp.set("styles", params.styles.join(","));
+      if (params.regions.length > 0)
+        sp.set("regions", params.regions.join(","));
       if (params.originCity) sp.set("originCity", params.originCity);
       if (params.originAirport) sp.set("originAirport", params.originAirport);
       if (params.destinationAirport)

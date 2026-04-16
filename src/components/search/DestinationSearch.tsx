@@ -15,6 +15,10 @@ interface SearchParams {
   endDate: string;
   travelers: number;
   style: string;
+  /** Selected trip-type styles (multi-select). */
+  styles: string[];
+  /** Selected regions the user wants to consider (multi-select). */
+  regions: string[];
   originCity: string;
   /** IATA code if the user picked an airport for origin (e.g. "JFK"). */
   originAirport?: string;
@@ -66,7 +70,40 @@ const POPULAR_DESTINATIONS = [
 // Destination autocomplete now uses Photon (Komoot's free OSM geocoder)
 // via the PlaceInput component — no hardcoded list needed.
 
-const STYLES = ["Adventure", "Cultural", "Relaxation", "Foodie", "Luxury"];
+const STYLES = [
+  "Adventure",
+  "Cultural",
+  "Relaxation",
+  "Foodie",
+  "Luxury",
+  "Nature",
+  "Nightlife",
+  "Family",
+  "Romantic",
+];
+
+const REGIONS = [
+  "Western Europe",
+  "Eastern Europe",
+  "Southern Europe",
+  "Northern Europe",
+  "Mediterranean",
+  "Scandinavia",
+  "Balkans",
+  "British Isles",
+  "North America",
+  "Central America",
+  "Caribbean",
+  "South America",
+  "North Africa",
+  "Sub-Saharan Africa",
+  "Middle East",
+  "South Asia",
+  "Southeast Asia",
+  "East Asia",
+  "Central Asia",
+  "Oceania",
+];
 
 function todayPlus(days: number): string {
   const d = new Date();
@@ -84,7 +121,11 @@ export default function DestinationSearch({
   const [startDate, setStartDate] = useState<string>(todayPlus(14));
   const [endDate, setEndDate] = useState<string>(todayPlus(19));
   const [travelers, setTravelers] = useState<number>(2);
-  const [style, setStyle] = useState<string>("Cultural");
+  // Multi-select trip styles. User can pick more than one (e.g. Cultural + Relaxation).
+  const [styles, setStyles] = useState<string[]>(["Cultural"]);
+  // Multi-select regions. Used when the user wants a region-based trip
+  // (e.g. "Eastern Europe") instead of specifying a city.
+  const [regions, setRegions] = useState<string[]>([]);
   // Budget per person per day in USD. Defaults to $150 (moderate).
   const [budgetPerDay, setBudgetPerDay] = useState<number>(150);
   const [dateError, setDateError] = useState<string | null>(null);
@@ -146,10 +187,25 @@ export default function DestinationSearch({
     setDestinations(destinations.filter((_, i) => i !== idx));
   };
 
+  const toggleStyle = (s: string) => {
+    setStyles((prev) =>
+      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]
+    );
+  };
+
+  const toggleRegion = (r: string) => {
+    setRegions((prev) =>
+      prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
+    );
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const primary = destinations[0]?.trim();
-    if (!primary) return;
+    // Submit is valid when the user has EITHER a city destination OR at
+    // least one region selected. Region-only trips let the generator pick
+    // cities within the chosen regions.
+    if (!primary && regions.length === 0) return;
 
     // Validate trip length before submitting
     if (startDate && endDate) {
@@ -177,15 +233,27 @@ export default function DestinationSearch({
       .map((d) => d.cityText)
       .join(" → ");
 
+    // When no city is provided we fall back to the selected regions as the
+    // "destination" label so downstream code always has a human-readable
+    // target (e.g. "Eastern Europe, Balkans").
+    const destinationLabel =
+      allCities || primaryDest?.cityText || regions.join(", ");
+
+    // Preserve legacy single-string `style` for any existing consumer —
+    // join the multi-select with " + " so backends see e.g. "Cultural + Relaxation".
+    const legacyStyle = styles.length > 0 ? styles.join(" + ") : "Cultural";
+
     onSearch({
-      destination: allCities || primaryDest.cityText,
+      destination: destinationLabel,
       startDate,
       endDate,
       travelers,
-      style,
+      style: legacyStyle,
+      styles,
+      regions,
       originCity: origin.cityText,
       originAirport: origin.iata ?? undefined,
-      destinationAirport: primaryDest.iata ?? undefined,
+      destinationAirport: primaryDest?.iata ?? undefined,
       budgetPerDay,
     });
   };
@@ -394,27 +462,87 @@ export default function DestinationSearch({
               </div>
             </div>
 
-            {/* Style */}
+            {/* Style summary (multi-select chips render below) */}
             <div className="relative md:col-span-1">
-              <label className="block font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
-                Style
+              <label className="flex items-center gap-1.5 font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                Vibe
               </label>
-              <div className="relative">
-                <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30 pointer-events-none" />
-                <select
-                  value={style}
-                  onChange={(e) => setStyle(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-cream-50 border border-cream-200 rounded-xl font-sans text-body-sm appearance-none focus:outline-none focus:ring-2 focus:ring-terracotta-500/40"
-                >
-                  {STYLES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+              <div className="min-h-[44px] px-3 py-2.5 bg-cream-50 border border-cream-200 rounded-xl font-sans text-body-sm text-charcoal-800/70 flex items-center">
+                {styles.length === 0
+                  ? "Pick one or more"
+                  : styles.join(" + ")}
               </div>
             </div>
           </div>
+
+          {/* Multi-select style chips — user can pick any combination
+              (e.g. Cultural + Relaxation). Empty selection is allowed but
+              the submit button will hint the user to pick at least one. */}
+          <div>
+            <label className="block font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+              What&apos;s the vibe? (pick any that fit)
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {STYLES.map((s) => {
+                const active = styles.includes(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggleStyle(s)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-full font-sans text-caption border transition-colors",
+                      active
+                        ? "bg-terracotta-500 text-white border-terracotta-500"
+                        : "bg-white border-cream-300 text-charcoal-800/70 hover:border-terracotta-500"
+                    )}
+                    aria-pressed={active}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Region multi-select — lets the user describe a region-based
+              trip ("Eastern Europe", "Mediterranean") instead of a single
+              city. Filled in only when destinations[0] is empty, to avoid
+              ambiguity between "Paris" + "Western Europe". */}
+          {!destinations[0]?.trim() && (
+            <div>
+              <label className="block font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+                Or pick regions to explore
+                {regions.length > 0 && (
+                  <span className="ml-1.5 text-charcoal-800/40">
+                    ({regions.length} selected)
+                  </span>
+                )}
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {REGIONS.map((r) => {
+                  const active = regions.includes(r);
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => toggleRegion(r)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-full font-sans text-caption border transition-colors",
+                        active
+                          ? "bg-terracotta-500 text-white border-terracotta-500"
+                          : "bg-white border-cream-300 text-charcoal-800/70 hover:border-terracotta-500"
+                      )}
+                      aria-pressed={active}
+                    >
+                      {r}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Budget */}
           <div>
@@ -466,10 +594,12 @@ export default function DestinationSearch({
             </div>
           </div>
 
-          {/* Submit */}
+          {/* Submit — valid when the user has a city destination OR
+              at least one region picked. Region-only trips let the backend
+              pick cities within the chosen regions. */}
           <button
             type="submit"
-            disabled={!destinations[0]?.trim()}
+            disabled={!destinations[0]?.trim() && regions.length === 0}
             className={cn(
               "w-full mt-4 px-6 py-4 rounded-2xl font-sans font-medium text-body",
               "bg-terracotta-500 text-white shadow-card",
@@ -478,7 +608,11 @@ export default function DestinationSearch({
               "transition-all"
             )}
           >
-            {isMultiCity ? "Plan my multi-city trip" : "Plan my trip"}
+            {isMultiCity
+              ? "Plan my multi-city trip"
+              : !destinations[0]?.trim() && regions.length > 0
+              ? `Plan a trip across ${regions.length === 1 ? regions[0] : `${regions.length} regions`}`
+              : "Plan my trip"}
           </button>
         </form>
       </motion.div>

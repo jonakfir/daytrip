@@ -440,6 +440,29 @@ function budgetContextLine(budgetPerDay: number): string {
 }
 
 /**
+ * Describe the trip style for Claude. Prefers the multi-select `styles` array
+ * (e.g. "Cultural + Relaxation") and falls back to the single `style` string
+ * for backwards compatibility with any caller that hasn't been upgraded yet.
+ */
+function styleDescriptor(req: GenerateRequest): string {
+  if (req.styles && req.styles.length > 0) {
+    return req.styles.join(" + ");
+  }
+  return req.style;
+}
+
+/**
+ * Build an extra prompt line describing the selected regions, if any. Region
+ * selection means the user hasn't picked a specific city — Claude should pick
+ * cities within those regions that match the style and budget.
+ */
+function regionContextLine(req: GenerateRequest): string {
+  if (!req.regions || req.regions.length === 0) return "";
+  const list = req.regions.join(", ");
+  return `\nRegion focus: the traveler wants a trip in ${list}. If the destination label is one of these regions (not a specific city), pick the best-fitting real cities within ${list} for the chosen style and budget, and build the itinerary around them. All places must be within cities in ${list}.`;
+}
+
+/**
  * Generate a contiguous chunk of days. The chunk is described with absolute
  * day numbers + dates so Sonnet can plan distances correctly even when the
  * trip is split across multiple calls. The optional `forbiddenPlaces` list
@@ -467,9 +490,9 @@ async function generateDayChunk(
       ? `\n\nFORBIDDEN (already used in this trip — never repeat): ${forbiddenPlaces.join(", ")}\n\nPick completely different restaurants, attractions, neighborhoods, and experiences.`
       : "";
 
-  const prompt = `${req.style} trip to ${req.destination}. Days ${dayNumbers[0]}–${
+  const prompt = `${styleDescriptor(req)} trip to ${req.destination}. Days ${dayNumbers[0]}–${
     dayNumbers[dayNumbers.length - 1]
-  } (of a longer itinerary). Dates: ${dates.join(", ")}.${budgetLine ? "\n" + budgetLine : ""}${forbiddenLine}
+  } (of a longer itinerary). Dates: ${dates.join(", ")}.${budgetLine ? "\n" + budgetLine : ""}${regionContextLine(req)}${forbiddenLine}
 
 Return a JSON array of ${numDays} day objects:
 [{"dayNumber":N,"date":"YYYY-MM-DD","title":"short","morning":[Activity,Activity],"afternoon":[Activity,Activity],"evening":[Activity,Activity],"tip":"one tip"}]
@@ -741,7 +764,7 @@ async function generateBookingData(
   const budgetLine = req.budgetPerDay
     ? budgetContextLine(req.budgetPerDay)
     : "";
-  const prompt = `Trip to ${req.destination}, ${req.startDate} to ${req.endDate}, ${req.travelers} travelers, ${req.style} style. ${originLine}${airportLine ? " " + airportLine : ""}${budgetLine ? "\n" + budgetLine : ""}
+  const prompt = `Trip to ${req.destination}, ${req.startDate} to ${req.endDate}, ${req.travelers} travelers, ${styleDescriptor(req)} style. ${originLine}${airportLine ? " " + airportLine : ""}${budgetLine ? "\n" + budgetLine : ""}${regionContextLine(req)}
 
 Output this exact JSON object:
 {"hotels":[{"name":"real hotel","pricePerNight":"$X","rating":4.5},{"name":"","pricePerNight":"$X","rating":4.5},{"name":"","pricePerNight":"$X","rating":4.5}],"flights":[{"airline":"real airline","departure":"","arrival":"","price":"$X","stops":0,"originAirport":"IATA","destinationAirport":"IATA"},{"airline":"","departure":"","arrival":"","price":"$X","stops":0,"originAirport":"IATA","destinationAirport":"IATA"}],"tours":[{"name":"real tour","price":"$X","duration":"","rating":4.5},{"name":"","price":"$X","duration":"","rating":4.5},{"name":"","price":"$X","duration":"","rating":4.5}],"tips":["","","",""]}

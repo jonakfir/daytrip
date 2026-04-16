@@ -99,6 +99,16 @@ function GeneratingContent() {
               new Date(Date.now() + 5 * 86400000).toISOString().split("T")[0],
             travelers: parseInt(searchParams.get("travelers") || "2"),
             style: searchParams.get("style") || "Cultural",
+            // Arrays are serialized on the search URL as comma-joined strings.
+            // Split back into arrays (empty string → empty array).
+            styles: (searchParams.get("styles") || "")
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+            regions: (searchParams.get("regions") || "")
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
             originCity: searchParams.get("originCity") || undefined,
             originAirport: searchParams.get("originAirport") || undefined,
             destinationAirport:
