@@ -401,6 +401,30 @@ function stripJsonFences(text: string): string {
 }
 
 /**
+ * Race a promise against a timeout. Used to cap slow/hung Claude SDK
+ * calls — the SDK has no per-request timeout of its own, so a slow
+ * Anthropic response or internal queueing can hold the stream silent
+ * past the client's 60s watchdog. Throws an Error tagged with the
+ * given label so the caller can fall back (e.g. city-coordinator
+ * returning null) or surface a clean error.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
+/**
  * Turn a $/day budget into a human-readable hint for Claude that also sets
  * realistic expectations about what kind of hotels/restaurants to suggest.
  *
@@ -502,12 +526,16 @@ Rules:
 - Group neighboring cities so travelers don't zigzag across the region.`;
 
   try {
-    const { text, usage } = await callClaudeWithUsage({
-      system,
-      prompt,
-      model: "claude-sonnet-4-6",
-      maxTokens: 1000,
-    });
+    const { text, usage } = await withTimeout(
+      callClaudeWithUsage({
+        system,
+        prompt,
+        model: "claude-sonnet-4-6",
+        maxTokens: 1000,
+      }),
+      45_000,
+      "city_coordinator_timeout"
+    );
     if (userId) {
       addClaudeUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
     }
@@ -710,21 +738,18 @@ async function generateDays(
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        const chunkPromise = generateDayChunk(
-          req,
-          dayNumbers,
-          dates,
-          userId,
-          [],
-          localDestination
+        return await withTimeout(
+          generateDayChunk(
+            req,
+            dayNumbers,
+            dates,
+            userId,
+            [],
+            localDestination
+          ),
+          PER_CHUNK_TIMEOUT_MS,
+          "chunk_timeout"
         );
-        const timeoutPromise = new Promise<DayPlan[]>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("chunk_timeout")),
-            PER_CHUNK_TIMEOUT_MS
-          )
-        );
-        return await Promise.race([chunkPromise, timeoutPromise]);
       } catch (e) {
         lastError = e;
         if (attempt < MAX_RETRIES - 1) {
@@ -949,12 +974,16 @@ Rules:
 - 3 real tours/experiences in ${req.destination}
 - 4 practical travel tips for ${req.destination}`;
 
-  const { text, usage } = await callClaudeWithUsage({
-    system,
-    prompt,
-    model: "claude-sonnet-4-6",
-    maxTokens: 1500,
-  });
+  const { text, usage } = await withTimeout(
+    callClaudeWithUsage({
+      system,
+      prompt,
+      model: "claude-sonnet-4-6",
+      maxTokens: 1500,
+    }),
+    60_000,
+    "booking_timeout"
+  );
   if (userId) {
     addClaudeUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
   }
@@ -1410,6 +1439,27 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       };
 
+      // Heartbeat: fire a no-op event every 20s so the client watchdog
+      // (60s of silence = abort) never trips while legitimate backend
+      // work is still in flight. The SDK path has no per-call timeout, so
+      // a slow Anthropic response or a parallel-call queue on their side
+      // can silently hold back the booking / days events past 60s. The
+      // heartbeat decouples client timeout from per-task latency.
+      const HEARTBEAT_MS = 20_000;
+      let heartbeatCount = 0;
+      const heartbeat = setInterval(() => {
+        heartbeatCount += 1;
+        try {
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({ type: "heartbeat", n: heartbeatCount }) + "\n"
+            )
+          );
+        } catch {
+          // Stream already closed; interval will clear in finally.
+        }
+      }, HEARTBEAT_MS);
+
       try {
         // Event 1: meta
         send({
@@ -1589,6 +1639,7 @@ export async function POST(request: NextRequest) {
           );
         } catch {}
       } finally {
+        clearInterval(heartbeat);
         try {
           controller.close();
         } catch {}
