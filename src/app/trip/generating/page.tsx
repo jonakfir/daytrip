@@ -152,13 +152,32 @@ function GeneratingContent() {
           );
         }
 
-        // Read NDJSON stream
+        // Read NDJSON stream with a stall watchdog. If the server goes
+        // silent (e.g. Vercel killed the function at the 300s cap mid-
+        // stream), the socket stays half-open and `reader.read()` would
+        // otherwise hang forever. Racing each read against a 60s timer
+        // surfaces the failure so the UI can show an actionable error
+        // instead of spinning indefinitely.
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        const STALL_TIMEOUT_MS = 60_000;
 
         while (!cancelled) {
-          const { done, value } = await reader.read();
+          let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+          const stallPromise = new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(
+              () => reject(new Error("GENERATION_STALLED")),
+              STALL_TIMEOUT_MS
+            );
+          });
+          let read: ReadableStreamReadResult<Uint8Array>;
+          try {
+            read = await Promise.race([reader.read(), stallPromise]);
+          } finally {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+          }
+          const { done, value } = read;
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
@@ -247,6 +266,14 @@ function GeneratingContent() {
           err instanceof DOMException &&
           err.name === "AbortError"
         ) {
+          return;
+        }
+        if (err instanceof Error && err.message === "GENERATION_STALLED") {
+          // Abort the in-flight fetch so the browser closes the
+          // half-open socket; otherwise the connection lingers until
+          // the tab closes.
+          controller.abort();
+          setError("GENERATION_STALLED");
           return;
         }
         setError(err instanceof Error ? err.message : "Something went wrong");
@@ -368,6 +395,40 @@ function GeneratingContent() {
               className="px-6 py-3 bg-terracotta-500 text-white rounded-xl font-sans font-medium hover:bg-terracotta-600 transition-colors"
             >
               Buy 1 trip — $3
+            </button>
+            <button
+              onClick={() => router.push("/")}
+              className="px-6 py-3 border border-cream-300 text-charcoal-800 rounded-xl font-sans font-medium hover:bg-cream-100 transition-colors"
+            >
+              Back home
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error === "GENERATION_STALLED") {
+    return (
+      <main className="min-h-screen bg-cream-100 flex items-center justify-center px-6">
+        <div className="text-center max-w-md">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-terracotta-500/10 rounded-full mb-6">
+            <Compass className="w-8 h-8 text-terracotta-500" />
+          </div>
+          <h1 className="font-serif text-display text-charcoal-900 mb-3">
+            This trip is taking too long
+          </h1>
+          <p className="font-sans text-body text-charcoal-800/70 mb-8 max-w-sm mx-auto">
+            We stopped waiting after a minute of silence from the planner.
+            Very long trips can push our servers past their limit — try
+            again, or split your plan into two shorter trips.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-terracotta-500 text-white rounded-xl font-sans font-medium hover:bg-terracotta-600 transition-colors"
+            >
+              Try again
             </button>
             <button
               onClick={() => router.push("/")}

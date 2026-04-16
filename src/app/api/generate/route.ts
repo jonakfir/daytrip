@@ -463,20 +463,114 @@ function regionContextLine(req: GenerateRequest): string {
 }
 
 /**
+ * For long region trips (e.g. "47 days in Eastern Europe"), ask Claude
+ * once — upfront, cheaply — to break the trip into a realistic multi-city
+ * itinerary. Returns a map from dayNumber → city so each parallel day
+ * chunk plans against a single concrete city instead of the whole region.
+ *
+ * Returns null when:
+ *   - no regions selected (the user already picked a specific city)
+ *   - trip is too short to be worth multi-city planning
+ *   - the Claude call fails or returns garbage — caller falls back to the
+ *     existing region-prompt behavior
+ */
+async function planCityItinerary(
+  req: GenerateRequest,
+  numDays: number,
+  userId: string | null
+): Promise<Map<number, string> | null> {
+  if (!req.regions || req.regions.length === 0) return null;
+  if (numDays < 14) return null;
+
+  const regionList = req.regions.join(", ");
+  const budgetLine = req.budgetPerDay
+    ? budgetContextLine(req.budgetPerDay)
+    : "";
+
+  const system = `Travel editor. Output ONLY a JSON array. No prose, no markdown. Real cities only.`;
+  const prompt = `Plan a ${numDays}-day ${styleDescriptor(req)} trip covering ${regionList}. Dates: ${req.startDate} to ${req.endDate}.${budgetLine ? "\n" + budgetLine : ""}
+
+Pick 4–8 real cities inside ${regionList} that flow well geographically (travelers will move between them). Assign each city a contiguous span of days that sums to exactly ${numDays}. Favor cities that actually exist in ${regionList} and match the chosen style and budget.
+
+Return a JSON array in this exact shape:
+[{"city":"Prague","country":"Czech Republic","startDay":1,"endDay":5},{"city":"Budapest","country":"Hungary","startDay":6,"endDay":10}]
+
+Rules:
+- Every city must be a real city in ${regionList}.
+- Day ranges must be contiguous, non-overlapping, and cover every day from 1 to ${numDays} with no gaps.
+- 4–8 cities total. More cities for longer trips; fewer for shorter ones.
+- Group neighboring cities so travelers don't zigzag across the region.`;
+
+  try {
+    const { text, usage } = await callClaudeWithUsage({
+      system,
+      prompt,
+      model: "claude-sonnet-4-6",
+      maxTokens: 1000,
+    });
+    if (userId) {
+      addClaudeUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
+    }
+    const parsed = JSON.parse(stripJsonFences(text));
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+
+    const cityByDay = new Map<number, string>();
+    for (const entry of parsed as Array<{
+      city?: string;
+      startDay?: number;
+      endDay?: number;
+    }>) {
+      const city = typeof entry?.city === "string" ? entry.city.trim() : "";
+      const startDay = Number(entry?.startDay);
+      const endDay = Number(entry?.endDay);
+      if (!city || !Number.isFinite(startDay) || !Number.isFinite(endDay)) continue;
+      for (let d = startDay; d <= endDay; d++) {
+        if (d >= 1 && d <= numDays) cityByDay.set(d, city);
+      }
+    }
+    // If the coordinator returned too few days covered, abandon it so we
+    // fall back to the old region-prompt path instead of a partial plan.
+    if (cityByDay.size < numDays * 0.8) {
+      console.warn(
+        `[generate] City coordinator covered ${cityByDay.size}/${numDays} days — falling back to region prompt`
+      );
+      return null;
+    }
+    console.log(
+      `[generate] City coordinator assigned ${cityByDay.size} days across ${new Set(cityByDay.values()).size} cities`
+    );
+    return cityByDay;
+  } catch (e) {
+    console.warn(
+      "[generate] City coordinator failed:",
+      e instanceof Error ? e.message : String(e)
+    );
+    return null;
+  }
+}
+
+/**
  * Generate a contiguous chunk of days. The chunk is described with absolute
  * day numbers + dates so Sonnet can plan distances correctly even when the
  * trip is split across multiple calls. The optional `forbiddenPlaces` list
  * tells Claude which place names have already been used by an earlier
- * chunk, so day 4-7 don't repeat day 1-3's activities.
+ * chunk, so day 4-7 don't repeat day 1-3's activities. When
+ * `localDestination` is provided (from the city-coordinator), the chunk
+ * plans inside that specific city instead of the broader req.destination.
  */
 async function generateDayChunk(
   req: GenerateRequest,
   dayNumbers: number[],
   dates: string[],
   userId: string | null,
-  forbiddenPlaces: string[] = []
+  forbiddenPlaces: string[] = [],
+  localDestination?: string
 ): Promise<DayPlan[]> {
   const numDays = dayNumbers.length;
+  // When a specific city was chosen by the city-coordinator (long region
+  // trips), pin this chunk to that city. Otherwise fall back to the
+  // user-supplied destination label (which may be a city or a region).
+  const effectiveDestination = localDestination ?? req.destination;
   const system = `Travel editor. Output ONLY a JSON array. No prose, no markdown. Real places, real distances. Every single activity name across the entire itinerary MUST be unique — never repeat a restaurant, attraction, neighborhood walk, or experience.`;
   const budgetLine = req.budgetPerDay
     ? budgetContextLine(req.budgetPerDay)
@@ -490,9 +584,14 @@ async function generateDayChunk(
       ? `\n\nFORBIDDEN (already used in this trip — never repeat): ${forbiddenPlaces.join(", ")}\n\nPick completely different restaurants, attractions, neighborhoods, and experiences.`
       : "";
 
-  const prompt = `${styleDescriptor(req)} trip to ${req.destination}. Days ${dayNumbers[0]}–${
+  // When a localDestination is pinned we've already committed this chunk
+  // to a single city, so the region-context line (which says "pick cities
+  // within the region") becomes noise. Skip it in that case.
+  const regionLine = localDestination ? "" : regionContextLine(req);
+
+  const prompt = `${styleDescriptor(req)} trip to ${effectiveDestination}. Days ${dayNumbers[0]}–${
     dayNumbers[dayNumbers.length - 1]
-  } (of a longer itinerary). Dates: ${dates.join(", ")}.${budgetLine ? "\n" + budgetLine : ""}${regionContextLine(req)}${forbiddenLine}
+  } (of a longer itinerary). Dates: ${dates.join(", ")}.${budgetLine ? "\n" + budgetLine : ""}${regionLine}${forbiddenLine}
 
 Return a JSON array of ${numDays} day objects:
 [{"dayNumber":N,"date":"YYYY-MM-DD","title":"short","morning":[Activity,Activity],"afternoon":[Activity,Activity],"evening":[Activity,Activity],"tip":"one tip"}]
@@ -524,9 +623,9 @@ UNIQUENESS RULES (CRITICAL — NEVER VIOLATE):
 - If a destination only has a handful of "must-see" spots and you'd be tempted to repeat one, instead branch out: pick a quieter alternative, a different neighborhood, a less-touristy version of the same category.
 
 GEOGRAPHY RULES (CRITICAL — NEVER VIOLATE):
-- Every single place must be PHYSICALLY LOCATED in ${req.destination}. Not "near", not "famous nationwide", not "in the same country". In the actual city limits or metro area of ${req.destination}.
+- Every single place must be PHYSICALLY LOCATED in ${effectiveDestination}. Not "near", not "famous nationwide", not "in the same country". In the actual city limits or metro area of ${effectiveDestination}.
 - Do NOT include restaurants, hotels, or attractions from OTHER cities, even if they are famous or thematically related. Example: for a New York trip, do not include Zahav (Philadelphia), Shake Shack in Las Vegas, or an Uri Scheft location in Tel Aviv.
-- If you are not 100% certain a place exists in ${req.destination}, do NOT include it. Pick a different real place you are sure about instead.
+- If you are not 100% certain a place exists in ${effectiveDestination}, do NOT include it. Pick a different real place you are sure about instead.
 - For walking distances to make sense, every two consecutive activities must be within reasonable local travel time of each other.
 
 Meal rules (CRITICAL):
@@ -566,27 +665,27 @@ Meal rules (CRITICAL):
 
 /**
  * First Claude call: generate the days array. For long trips (>7 days) we
- * split into sequential chunks of up to 7 days each, passing an
- * accumulated forbidden-places list so later chunks never repeat
- * activities from earlier ones. After all chunks land we run a final
- * post-process dedup pass as a safety net for any leftover collisions.
+ * split into 7-day chunks and fire them in parallel — Claude Sonnet's
+ * per-call latency is the floor, so a 47-day trip finishes in roughly the
+ * time of one chunk (~15s) instead of seven sequential chunks (~84s).
  *
- * 7-day chunks keep each Claude call well under the max-tokens budget
- * and total wall-clock time under the 300s Vercel limit even for
- * month-long trips (e.g. 60 days = 9 chunks x ~12s each = ~108s).
+ * Tradeoff: parallel chunks can't share a forbidden-places window the way
+ * sequential ones did. `dedupeDays()` is the safety net that renames or
+ * drops duplicate activity names across the whole itinerary. When
+ * `cityByDay` is provided (from `planCityItinerary`), each chunk pins its
+ * days to a specific real city inside the user's region(s), so even
+ * independent chunks pick geographically disjoint places.
  */
 async function generateDays(
   req: GenerateRequest,
   numDays: number,
   userId: string | null,
-  onChunkComplete?: (completedDays: number, totalDays: number) => void
+  onChunkComplete?: (completedDays: number, totalDays: number) => void,
+  cityByDay?: Map<number, string>
 ): Promise<DayPlan[]> {
   const CHUNK_SIZE = 7;
-  const MAX_RETRIES = 3;
-  // Only pass the last WINDOW_CHUNKS chunks' places as forbidden.
-  // Keeps the prompt lean on long trips while still preventing duplicates
-  // within the same city. dedupeDays() catches anything further back.
-  const WINDOW_CHUNKS = 3;
+  const MAX_RETRIES = 2;
+  const PER_CHUNK_TIMEOUT_MS = 60_000;
 
   // Build absolute date list
   const allDates: string[] = [];
@@ -601,52 +700,121 @@ async function generateDays(
   }
   const allDayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
 
-  // Short trips: single call — no chunk-vs-chunk dedup needed, but we
-  // still run the post-process safety net.
+  // Wraps generateDayChunk with per-attempt timeout + bounded retries so
+  // one slow Claude call can't stall the whole Promise.all.
+  const runChunkWithRetry = async (
+    dayNumbers: number[],
+    dates: string[],
+    localDestination?: string
+  ): Promise<DayPlan[]> => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const chunkPromise = generateDayChunk(
+          req,
+          dayNumbers,
+          dates,
+          userId,
+          [],
+          localDestination
+        );
+        const timeoutPromise = new Promise<DayPlan[]>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("chunk_timeout")),
+            PER_CHUNK_TIMEOUT_MS
+          )
+        );
+        return await Promise.race([chunkPromise, timeoutPromise]);
+      } catch (e) {
+        lastError = e;
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Day chunk generation failed");
+  };
+
+  // Short trips: single call.
   if (numDays <= CHUNK_SIZE) {
-    const single = await generateDayChunk(req, allDayNumbers, allDates, userId);
+    const localDest = cityByDay
+      ? pickDominantCity(allDayNumbers, cityByDay)
+      : undefined;
+    const single = await runChunkWithRetry(allDayNumbers, allDates, localDest);
     onChunkComplete?.(numDays, numDays);
     return dedupeDays(single);
   }
 
-  // Long trips: split into sequential chunks of up to CHUNK_SIZE days.
-  // Each chunk receives a windowed forbidden-places list from recent
-  // chunks so activities are never repeated within the same stretch.
-  const allDays: DayPlan[] = [];
-
+  // Long trips: split into chunks of up to CHUNK_SIZE days and fire all in
+  // parallel. Wall-clock ≈ slowest chunk instead of sum of all chunks.
+  const chunkRanges: Array<{
+    dayNumbers: number[];
+    dates: string[];
+    localDestination?: string;
+  }> = [];
   for (let offset = 0; offset < numDays; offset += CHUNK_SIZE) {
     const end = Math.min(offset + CHUNK_SIZE, numDays);
-
-    // Sliding window: only forbid places from the last WINDOW_CHUNKS
-    // chunks. For multi-city trips the cities diverge naturally; for
-    // single-city trips 21 days of lookback is generous. dedupeDays()
-    // still catches anything that slips through globally.
-    const windowStart = Math.max(0, allDays.length - WINDOW_CHUNKS * CHUNK_SIZE);
-    const forbiddenPlaces = collectPlaceNames(allDays.slice(windowStart));
-
-    // Retry loop: transient Claude failures shouldn't kill the whole trip.
-    let chunk: DayPlan[] | null = null;
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      try {
-        chunk = await generateDayChunk(
-          req,
-          allDayNumbers.slice(offset, end),
-          allDates.slice(offset, end),
-          userId,
-          forbiddenPlaces
-        );
-        break;
-      } catch (e) {
-        if (attempt === MAX_RETRIES - 1) throw e;
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-
-    allDays.push(...chunk!);
-    onChunkComplete?.(end, numDays);
+    const dayNumbers = allDayNumbers.slice(offset, end);
+    const dates = allDates.slice(offset, end);
+    chunkRanges.push({
+      dayNumbers,
+      dates,
+      localDestination: cityByDay
+        ? pickDominantCity(dayNumbers, cityByDay)
+        : undefined,
+    });
   }
 
+  // Track completed-day progress for the NDJSON `progress` event. Chunks
+  // finish in arbitrary order, so we accumulate day counts instead of
+  // reporting a monotonic left-to-right boundary.
+  let completedDays = 0;
+  const chunkPromises = chunkRanges.map(
+    async ({ dayNumbers, dates, localDestination }) => {
+      const chunk = await runChunkWithRetry(dayNumbers, dates, localDestination);
+      completedDays += dayNumbers.length;
+      onChunkComplete?.(completedDays, numDays);
+      return { dayNumbers, chunk };
+    }
+  );
+
+  const results = await Promise.all(chunkPromises);
+
+  // Reassemble chunks in day-number order so the final itinerary reads
+  // Day 1 → Day N regardless of which chunk resolved first.
+  results.sort((a, b) => (a.dayNumbers[0] ?? 0) - (b.dayNumbers[0] ?? 0));
+  const allDays: DayPlan[] = results.flatMap((r) => r.chunk);
+
   return dedupeDays(allDays);
+}
+
+/**
+ * Given a chunk's day numbers and the cityByDay map from planCityItinerary,
+ * return the city that covers the most days in the chunk. This lets each
+ * parallel chunk plan against a single, concrete city instead of the
+ * whole region label.
+ */
+function pickDominantCity(
+  dayNumbers: number[],
+  cityByDay: Map<number, string>
+): string | undefined {
+  const counts = new Map<string, number>();
+  for (const d of dayNumbers) {
+    const city = cityByDay.get(d);
+    if (!city) continue;
+    counts.set(city, (counts.get(city) ?? 0) + 1);
+  }
+  let bestCity: string | undefined;
+  let bestCount = 0;
+  for (const [city, count] of counts) {
+    if (count > bestCount) {
+      bestCity = city;
+      bestCount = count;
+    }
+  }
+  return bestCity;
 }
 
 /**
@@ -1276,13 +1444,21 @@ export async function POST(request: NextRequest) {
           console.warn("[generate] Amadeus flights failed:", e);
           return null;
         });
-        const daysPromise = generateDays(
-          body,
-          numDays,
-          userId,
-          (completedDays, totalDays) => {
-            send({ type: "progress", completedDays, totalDays });
-          }
+        // For long region trips, plan the multi-city itinerary up front so
+        // each parallel day chunk can pin to a concrete city. The call is
+        // cheap (~3s) and its result flows into generateDays; failures fall
+        // back to the old region-prompt behavior.
+        const cityPlanPromise = planCityItinerary(body, numDays, userId);
+        const daysPromise = cityPlanPromise.then((cityByDay) =>
+          generateDays(
+            body,
+            numDays,
+            userId,
+            (completedDays, totalDays) => {
+              send({ type: "progress", completedDays, totalDays });
+            },
+            cityByDay ?? undefined
+          )
         );
         const bookingPromise = generateBookingData(body, userId);
 
