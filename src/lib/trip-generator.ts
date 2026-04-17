@@ -10,6 +10,7 @@
  * tests by injecting a mock Claude client.
  */
 
+import { jsonrepair } from "jsonrepair";
 import {
   callClaudeWithUsage,
   estimateUsageCents,
@@ -62,6 +63,41 @@ export function stripJsonFences(text: string): string {
   const open = text.match(/```(?:json)?\s*([\s\S]*)$/);
   if (open) return open[1].replace(/`+\s*$/, "").trim();
   return text.trim();
+}
+
+/**
+ * Parse Claude's JSON output with fallback.
+ *
+ * Claude Sonnet is instructed to return pure JSON, but it occasionally
+ * emits: wrapped code fences (handled by stripJsonFences above),
+ * trailing commas, single-quoted strings, unquoted keys, smart quotes,
+ * or comments. We first try native JSON.parse. On failure we run
+ * `jsonrepair` — a well-tested library that fixes all of the above —
+ * and try once more. If the repaired output still won't parse, throw
+ * with a trimmed snippet so operators can diagnose.
+ *
+ * The repair pass has side effects: it may coerce malformed numbers
+ * or drop un-closeable tails. That's fine for our use case: day
+ * chunks and booking payloads are recoverable even if one field is
+ * missing, and the runner retries failed chunks.
+ */
+export function parseClaudeJson(text: string): unknown {
+  const stripped = stripJsonFences(text);
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    try {
+      const repaired = jsonrepair(stripped);
+      return JSON.parse(repaired);
+    } catch (e) {
+      const snippet = stripped.slice(0, 300);
+      throw new Error(
+        `Failed to parse Claude JSON even after repair: ${
+          e instanceof Error ? e.message : String(e)
+        }. First 300 chars: ${snippet}`
+      );
+    }
+  }
 }
 
 export function withTimeout<T>(
@@ -177,7 +213,7 @@ Rules: every city real and in ${regionList}; ranges contiguous, non-overlapping,
     if (userId) {
       deps.addUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
     }
-    const parsed = JSON.parse(stripJsonFences(text));
+    const parsed = parseClaudeJson(text);
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
     const entries: CityPlanEntry[] = [];
     for (const e of parsed) {
@@ -246,7 +282,7 @@ Rules:
   if (userId) {
     deps.addUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
   }
-  const parsed = JSON.parse(stripJsonFences(text));
+  const parsed = parseClaudeJson(text);
   return Array.isArray(parsed) ? (parsed as DayPlan[]) : [];
 }
 
@@ -277,7 +313,7 @@ Rules: 3 real hotels at different price points, 2 real airlines with correct IAT
   if (userId) {
     deps.addUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
   }
-  const parsed = JSON.parse(stripJsonFences(text)) as {
+  const parsed = parseClaudeJson(text) as {
     hotels?: Hotel[];
     flights?: Flight[];
     tours?: ViatorTour[];
