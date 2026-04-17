@@ -60,6 +60,7 @@ export default function LandscapeHero() {
       style: string;
       styles: string[];
       regions: string[];
+      cities: string[];
       originCity: string;
       originAirport?: string;
       destinationAirport?: string;
@@ -77,6 +78,8 @@ export default function LandscapeHero() {
       if (params.styles.length > 0) sp.set("styles", params.styles.join(","));
       if (params.regions.length > 0)
         sp.set("regions", params.regions.join(","));
+      if (params.cities.length > 0)
+        sp.set("cities", params.cities.join(","));
       if (params.originCity) sp.set("originCity", params.originCity);
       if (params.originAirport) sp.set("originAirport", params.originAirport);
       if (params.destinationAirport)

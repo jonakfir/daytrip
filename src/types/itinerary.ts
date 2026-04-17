@@ -87,6 +87,11 @@ export interface GenerateRequest {
    *  `destination` is a free-text region label and the generator should pick
    *  specific cities within those regions. */
   regions?: string[];
+  /** Explicit cities chosen by the user after expanding a region (from the
+   *  region catalog). When present and non-empty, the generator distributes
+   *  days across these cities directly and SKIPS the Claude city-coordinator
+   *  pre-step. This is the preferred path for region-based trips. */
+  cities?: string[];
   budget?: string;
   /** City the traveler is departing from (e.g. "New York", "London"). Used to
    *  generate Skyscanner deep-links so flight prices and search results are

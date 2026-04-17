@@ -8,6 +8,7 @@ import { MAX_TRIP_DAYS } from "@/lib/constants";
 import PlaceInput from "@/components/search/PlaceInput";
 import { extractIataFromLabel, getAirportByIATA } from "@/lib/airports";
 import { hapticTap } from "@/lib/capacitor";
+import RegionCityPicker from "@/components/search/RegionCityPicker";
 
 interface SearchParams {
   destination: string;
@@ -19,6 +20,10 @@ interface SearchParams {
   styles: string[];
   /** Selected regions the user wants to consider (multi-select). */
   regions: string[];
+  /** Specific cities the user picked inside one or more regions. When
+   *  non-empty, the generator distributes days across exactly these
+   *  cities. */
+  cities: string[];
   originCity: string;
   /** IATA code if the user picked an airport for origin (e.g. "JFK"). */
   originAirport?: string;
@@ -126,6 +131,10 @@ export default function DestinationSearch({
   // Multi-select regions. Used when the user wants a region-based trip
   // (e.g. "Eastern Europe") instead of specifying a city.
   const [regions, setRegions] = useState<string[]>([]);
+  // Cities the user picked from the region's catalog. Keyed by city name
+  // (globally unique across our catalog). Cleared when all regions are
+  // deselected.
+  const [selectedCities, setSelectedCities] = useState<string[]>([]);
   // Budget per person per day in USD. Defaults to $150 (moderate).
   const [budgetPerDay, setBudgetPerDay] = useState<number>(150);
   const [dateError, setDateError] = useState<string | null>(null);
@@ -251,6 +260,7 @@ export default function DestinationSearch({
       style: legacyStyle,
       styles,
       regions,
+      cities: selectedCities,
       originCity: origin.cityText,
       originAirport: origin.iata ?? undefined,
       destinationAirport: primaryDest?.iata ?? undefined,
@@ -541,6 +551,27 @@ export default function DestinationSearch({
                   );
                 })}
               </div>
+              <RegionCityPicker
+                regions={regions}
+                selectedCities={selectedCities}
+                onToggleCity={(city) =>
+                  setSelectedCities((cur) =>
+                    cur.includes(city)
+                      ? cur.filter((c) => c !== city)
+                      : [...cur, city]
+                  )
+                }
+                onSelectAllInRegion={(cities, select) => {
+                  setSelectedCities((cur) => {
+                    if (!select) {
+                      return cur.filter((c) => !cities.includes(c));
+                    }
+                    const set = new Set(cur);
+                    cities.forEach((c) => set.add(c));
+                    return Array.from(set);
+                  });
+                }}
+              />
             </div>
           )}
 
