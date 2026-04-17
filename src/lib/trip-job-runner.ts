@@ -66,11 +66,22 @@ export async function runOneStep(
 
   const step = nextStep(job);
   if (!step) {
-    // Nothing to run. Either we're already complete or stuck.
-    const patchable = isComplete(job)
-      ? { status: "complete" as const }
-      : { status: "failed" as const, error: "no runnable step" };
-    return repo.update(job.id, patchable);
+    // Nothing to run. Three cases:
+    //   A) Everything is done AND finalItinerary exists → complete.
+    //   B) All retryable steps are exhausted but we have enough partial
+    //      data to assemble a usable itinerary → run a best-effort
+    //      assemble anyway, mark complete.
+    //   C) Truly stuck (no chunk days at all) → failed.
+    if (isComplete(job)) {
+      return repo.update(job.id, { status: "complete" });
+    }
+    if (canAssemblePartial(job)) {
+      return forceAssemblePartial(job, deps);
+    }
+    return repo.update(job.id, {
+      status: "failed",
+      error: job.error ?? "no runnable step",
+    });
   }
 
   // Mark running (atomically bumps attempts)
@@ -89,8 +100,13 @@ export async function runOneStep(
       deps
     );
     const nextSteps = markStepDone(updated.steps, step.key);
-    const nowComplete =
-      nextSteps.every((s) => s.status === "done") && !!updated.finalItinerary;
+    // Job is complete if:
+    //   - every step is done AND finalItinerary exists (ideal path), OR
+    //   - finalItinerary exists (assemble ran, produced a usable result).
+    //     This covers the fail-soft case where one chunk was unrecover-
+    //     ably failed but assemble still built an itinerary from the
+    //     chunks that succeeded.
+    const nowComplete = !!updated.finalItinerary;
     return repo.update(job.id, {
       ...updated,
       steps: nextSteps,
@@ -103,10 +119,83 @@ export async function runOneStep(
     const exhausted = failedSteps.find(
       (s) => s.key === step.key && s.attempts >= MAX_STEP_ATTEMPTS
     );
+    // Keep the job in "running" state even when a single step is
+    // permanently failed — the runner's top-level "no runnable step"
+    // branch decides whether to fail-soft assemble or terminate. This
+    // lets one broken chunk coexist with successful ones and still
+    // produce a usable itinerary.
     return repo.update(job.id, {
       steps: failedSteps,
-      status: exhausted ? "failed" : "running",
+      status: "running",
       error: exhausted ? message : null,
+    });
+  }
+}
+
+/**
+ * A job is "assemble-able" when there's NO runnable step remaining
+ * and we have at least one chunk of day data. This lets the user
+ * receive a usable (even if incomplete) itinerary instead of getting
+ * a stuck "no runnable step" error when a single chunk is wedged.
+ */
+function canAssemblePartial(job: TripJob): boolean {
+  const assembleStep = job.steps.find((s) => s.key === "assemble");
+  if (!assembleStep) return false;
+  const hasDays = job.dayChunks.some((c) => c.days.length > 0);
+  return hasDays && !job.finalItinerary;
+}
+
+/**
+ * Last-resort assemble: whatever we have, turn it into an itinerary.
+ * Marks all unfinished steps as done (they're as done as they'll
+ * ever be) and flips the job to complete. Better to show the user
+ * a partial trip than an error screen.
+ */
+async function forceAssemblePartial(
+  job: TripJob,
+  deps: RunnerDeps
+): Promise<TripJob> {
+  const repo = getRepo();
+  try {
+    const req = job.request;
+    const generateId = deps.generateId ?? (() => crypto.randomUUID());
+    const generateShareId =
+      deps.generateShareId ?? (() => Math.random().toString(36).slice(2, 10));
+    const allDays = dedupeDays(job.dayChunks.flatMap((c) => c.days));
+    const booking = job.booking ?? { hotels: [], flights: [], tours: [], tips: [] };
+    const flights = job.flightsReal ?? booking.flights;
+    const itinerary: Itinerary = {
+      id: generateId(),
+      shareId: job.shareId ?? generateShareId(),
+      destination: req.destination,
+      startDate: req.startDate,
+      endDate: req.endDate,
+      travelers: req.travelers,
+      travelStyle: req.style,
+      budget: req.budget ?? "moderate",
+      days: allDays,
+      hotels: booking.hotels,
+      flights,
+      tours: booking.tours,
+      tips: booking.tips,
+      heroImage: job.heroImage ?? undefined,
+      originCity: req.originCity,
+    };
+    // Flip every non-done step to done so the ledger reflects reality.
+    const sealedSteps = job.steps.map((s) =>
+      s.status === "done" ? s : { ...s, status: "done" as const, finishedAt: new Date().toISOString() }
+    );
+    return repo.update(job.id, {
+      status: "complete",
+      finalItinerary: itinerary,
+      shareId: itinerary.shareId,
+      steps: sealedSteps,
+      error: null,
+    });
+  } catch (e) {
+    return repo.update(job.id, {
+      status: "failed",
+      error: `force-assemble failed: ${e instanceof Error ? e.message : String(e)}`,
     });
   }
 }
@@ -179,6 +268,13 @@ async function executeStep(
     const generateShareId =
       deps.generateShareId ?? (() => Math.random().toString(36).slice(2, 10));
     const allDays = dedupeDays(job.dayChunks.flatMap((c) => c.days));
+    // Refuse to produce an empty itinerary. Zero days means every chunk
+    // failed permanently — let the step be marked failed so the top-
+    // level runner flips the job to "failed" instead of silently
+    // emitting a day-less shell.
+    if (allDays.length === 0) {
+      throw new Error("cannot assemble: no day data produced by any chunk");
+    }
     const booking = job.booking ?? { hotels: [], flights: [], tours: [], tips: [] };
     const flights = job.flightsReal ?? booking.flights;
     const itinerary: Itinerary = {

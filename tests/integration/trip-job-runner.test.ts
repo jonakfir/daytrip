@@ -217,7 +217,55 @@ describe("resilience", () => {
     const booking = done.steps.find((s) => s.key === "booking");
     expect(booking?.status).toBe("failed");
     expect(booking?.attempts).toBe(MAX_STEP_ATTEMPTS);
-    expect(done.error).toContain("permanent failure");
+    // The final error the runner surfaces is from the assemble step
+    // (which can't build an itinerary when every chunk failed) but the
+    // per-step error on `booking` still records the permanent failure.
+    expect(booking?.error).toContain("permanent failure");
+  });
+});
+
+describe("fail-soft assemble (partial completion)", () => {
+  it("when one chunk is permanently failed but others succeed, still produces an itinerary", async () => {
+    // 14-day trip → 2 chunks. Fail chunk:1 hard every time; chunk:0 succeeds.
+    const base = makeClaudeStub();
+    let chunk1Attempts = 0;
+    const deps: RunnerDeps = {
+      ...base,
+      callClaude: async (opts) => {
+        if (opts.prompt.includes("Days 8\u201314")) {
+          chunk1Attempts += 1;
+          throw new Error("chunk 1 always fails");
+        }
+        return base.callClaude(opts);
+      },
+    };
+    const req = baseReq({ startDate: "2026-05-01", endDate: "2026-05-14" });
+    const job = await createJob(req, { userId: null, anonToken: "anon-soft" });
+    const done = await runUntilDone(job.id, deps);
+    // Should complete (not fail), with partial days from chunk:0
+    expect(done.status).toBe("complete");
+    expect(done.finalItinerary).toBeTruthy();
+    const itin = done.finalItinerary as { days: DayPlan[] };
+    // chunk:0 covers days 1-7 so we get at least those
+    expect(itin.days.length).toBeGreaterThanOrEqual(7);
+    // chunk:1 was hit MAX_STEP_ATTEMPTS times
+    expect(chunk1Attempts).toBeGreaterThanOrEqual(3);
+  });
+
+  it("if NO chunk succeeds, job correctly ends failed (not stuck in assemble)", async () => {
+    const deps: RunnerDeps = {
+      callClaude: async (opts) => {
+        if (opts.prompt.includes("Days")) throw new Error("all chunks fail");
+        // booking + city_plan succeed
+        return (makeClaudeStub().callClaude as (o: { prompt: string; maxTokens?: number }) => Promise<ReturnType<typeof makeClaudeStub>["callClaude"] extends (...a: unknown[]) => Promise<infer R> ? R : never>)(opts);
+      },
+      addUsage: async () => undefined,
+      fetchHero: async () => null,
+      fetchFlights: async () => null,
+    };
+    const job = await createJob(baseReq(), { userId: null, anonToken: "anon-total-fail" });
+    const done = await runUntilDone(job.id, deps);
+    expect(done.status).toBe("failed");
   });
 });
 

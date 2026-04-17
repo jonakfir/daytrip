@@ -5,10 +5,12 @@ import { fetchHeroImageForStep, fetchBestFlightsForStep, finalizeItinerary } fro
 import type { Itinerary } from "@/types/itinerary";
 
 export const runtime = "nodejs";
-// Per-step budget: 45s for the Vercel function. Any individual step
-// caps its inner Claude calls at ≤60s, but a single /step invocation
-// returns as soon as one step finishes so we stay well under this.
-export const maxDuration = 60;
+// Per-step budget: 90s for the Vercel function. Inner Claude calls
+// cap at 80s so any timeout error fires cleanly and the step runner
+// can mark the step failed + retry, instead of Vercel killing the
+// function with a generic 504 (which leaves the step in "running"
+// state forever and blocks progress).
+export const maxDuration = 90;
 
 interface Params {
   params: { jobId: string };

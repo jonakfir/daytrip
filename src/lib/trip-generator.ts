@@ -172,9 +172,13 @@ export function buildDatesForTrip(
 
 // ── Step functions — each does one unit of work ─────────────────────
 
+// All inner timeouts must be strictly less than the /api/trip/step
+// route's maxDuration so the timeout error (which we can handle + retry)
+// fires before Vercel kills the function with a generic 504.
+// Route maxDuration = 90s → caps at 80s here.
 const CITY_PLAN_TIMEOUT_MS = 45_000;
-const BOOKING_TIMEOUT_MS = 60_000;
-const CHUNK_TIMEOUT_MS = 60_000;
+const BOOKING_TIMEOUT_MS = 75_000;
+const CHUNK_TIMEOUT_MS = 80_000;
 
 /**
  * Pick 4–8 real cities inside the selected region(s) and assign
