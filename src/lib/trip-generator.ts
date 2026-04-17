@@ -54,8 +54,14 @@ export const defaultDeps: TripGeneratorDeps = {
 // ── Small helpers (exported so step executor can use them too) ───────
 
 export function stripJsonFences(text: string): string {
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return (fenceMatch ? fenceMatch[1] : text).trim();
+  // First try a closed fence — "```json\n...\n```"
+  const closed = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (closed) return closed[1].trim();
+  // Fall back to an open fence — "```json\n..." truncated. Strip the
+  // opening fence and any trailing stray backticks.
+  const open = text.match(/```(?:json)?\s*([\s\S]*)$/);
+  if (open) return open[1].replace(/`+\s*$/, "").trim();
+  return text.trim();
 }
 
 export function withTimeout<T>(
@@ -228,7 +234,10 @@ Rules:
 - Do NOT include arrival/departure flights or airport transfers (added separately)
 - Unique activity names; no repeats across days`;
 
-  const maxTokens = Math.min(numDays * 600, 8000);
+  // Floor at 2000 tokens so short chunks still have room for the full
+  // JSON object even if Claude's response has some preamble/whitespace.
+  // Ceiling at 8000 to keep the request bounded.
+  const maxTokens = Math.max(2000, Math.min(numDays * 800, 8000));
   const { text, usage } = await withTimeout(
     deps.callClaude({ system, prompt, model: "claude-sonnet-4-6", maxTokens }),
     CHUNK_TIMEOUT_MS,
