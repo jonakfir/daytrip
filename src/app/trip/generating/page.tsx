@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -63,14 +63,19 @@ function GeneratingContent() {
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [lastTickAt, setLastTickAt] = useState<number>(Date.now());
   const consecutiveFailures = useRef(0);
-  const startedRef = useRef(false);
 
   const destination = searchParams.get("destination") || "your destination";
 
   // ── Start a job then drive its steps ──────────────────────────────
+  //
+  // We deliberately DON'T guard with a module/ref "already started" flag.
+  // React 18 strict mode remounts the component in dev, which would
+  // suppress the second mount's drive() if a ref-based guard were set
+  // on the first mount. Instead we rely on the per-mount `cancelled`
+  // closure: the first mount's drive is cancelled before it reaches
+  // any meaningful work, and the second mount starts cleanly. In
+  // production strict-double-mount doesn't happen so there's no waste.
   useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
     let cancelled = false;
 
     const startJob = async (): Promise<string | null> => {
