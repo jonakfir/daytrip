@@ -6,7 +6,7 @@
  * bounded so the runner never spends more than the step's budget.
  */
 
-import { supabase } from "@/lib/supabase";
+import { sql } from "@vercel/postgres";
 import {
   buildSkyscannerFlightUrl,
   buildSkyscannerHotelUrl,
@@ -15,6 +15,7 @@ import { fetchTravelpayoutsFlights } from "@/lib/travelpayouts";
 import { fetchSerpApiFlights } from "@/lib/serpapi";
 import type { GenerateRequest, Flight, Itinerary } from "@/types/itinerary";
 import { withTimeout } from "@/lib/trip-generator";
+import { ensureItinerariesTable } from "@/lib/trip-job-repo";
 
 const WIKI_TIMEOUT_MS = 8_000;
 const PROVIDER_TIMEOUT_MS = 10_000;
@@ -153,11 +154,15 @@ export async function fetchBestFlightsForStep(
   }));
 }
 
-/** Write the final itinerary to the existing `itineraries` table. */
+/** Write the final itinerary to the `itineraries` Postgres table. */
 export async function finalizeItinerary(itinerary: Itinerary): Promise<void> {
-  if (!supabase) return;
+  const isConfigured =
+    !!process.env.POSTGRES_URL ||
+    !!process.env.POSTGRES_PRISMA_URL ||
+    !!process.env.DATABASE_URL;
+  if (!isConfigured) return;
   try {
-    // Add Skyscanner hotel URL to each hotel for consistent cards.
+    await ensureItinerariesTable();
     const hotelsWithUrls = itinerary.hotels.map((h) => ({
       ...h,
       bookingUrl:
@@ -170,18 +175,24 @@ export async function finalizeItinerary(itinerary: Itinerary): Promise<void> {
         }),
     }));
     const enriched: Itinerary = { ...itinerary, hotels: hotelsWithUrls };
-    await supabase.from("itineraries").insert({
-      id: enriched.id,
-      share_id: enriched.shareId,
-      destination: enriched.destination,
-      start_date: enriched.startDate,
-      end_date: enriched.endDate,
-      travelers: enriched.travelers,
-      travel_style: enriched.travelStyle,
-      budget: enriched.budget,
-      itinerary_data: enriched,
-      view_count: 0,
-    });
+    await sql`
+      INSERT INTO itineraries (
+        id, share_id, destination, start_date, end_date, travelers,
+        travel_style, budget, itinerary_data, view_count
+      ) VALUES (
+        ${enriched.id},
+        ${enriched.shareId},
+        ${enriched.destination},
+        ${enriched.startDate},
+        ${enriched.endDate},
+        ${enriched.travelers},
+        ${enriched.travelStyle},
+        ${enriched.budget},
+        ${JSON.stringify(enriched)}::jsonb,
+        0
+      )
+      ON CONFLICT (share_id) DO NOTHING;
+    `;
   } catch {
     // Non-fatal: the itinerary is still in the client's sessionStorage.
   }
