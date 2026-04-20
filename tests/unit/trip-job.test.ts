@@ -90,7 +90,7 @@ describe("needsCityPlan", () => {
 });
 
 describe("planSteps", () => {
-  it("plans init + hero + flights + booking + chunks + assemble for a plain 5-day trip", () => {
+  it("plans init + hero + flights + booking + single-city-hotels + chunk + assemble for a plain 5-day trip", () => {
     const steps = planSteps(baseReq());
     const keys = steps.map((s) => s.key);
     expect(keys).toEqual([
@@ -98,11 +98,12 @@ describe("planSteps", () => {
       "hero",
       "flight_providers",
       "booking",
+      "hotels:0",
       "chunk:0",
       "assemble",
     ]);
   });
-  it("inserts city_plan for a long region trip", () => {
+  it("inserts city_plan for a long region trip (hotels steps inserted dynamically by runner)", () => {
     const steps = planSteps(
       baseReq({
         regions: ["Eastern Europe"],
@@ -115,10 +116,13 @@ describe("planSteps", () => {
     // 47 days → 7 chunks
     const chunkSteps = keys.filter((k) => k.startsWith("chunk:"));
     expect(chunkSteps).toHaveLength(7);
-    // init, hero, flights, city_plan, booking, 7 chunks, assemble = 13
+    // Region trips don't plan hotel steps up front — they're added
+    // after city_plan runs. Steps are: init, hero, flights, city_plan,
+    // booking, 7 chunks, assemble = 13.
     expect(keys).toHaveLength(13);
+    expect(keys.filter((k) => k.startsWith("hotels:"))).toHaveLength(0);
   });
-  it("skips city_plan when explicit cities are chosen", () => {
+  it("adds one hotels step per explicit city when user picks them", () => {
     const steps = planSteps(
       baseReq({
         regions: ["Eastern Europe"],
@@ -127,7 +131,9 @@ describe("planSteps", () => {
         endDate: "2026-07-01",
       })
     );
-    expect(steps.map((s) => s.key)).not.toContain("city_plan");
+    const keys = steps.map((s) => s.key);
+    expect(keys).not.toContain("city_plan");
+    expect(keys.filter((k) => k.startsWith("hotels:"))).toHaveLength(2);
   });
   it("all steps start pending with zero attempts", () => {
     const steps = planSteps(baseReq());
@@ -155,6 +161,7 @@ const makeJob = (override: Partial<TripJob> = {}): TripJob => ({
   cityPlan: null,
   dayChunks: [],
   booking: null,
+  hotelsByCity: {},
   flightsReal: null,
   finalItinerary: null,
   steps: planSteps(baseReq()),
@@ -236,10 +243,11 @@ describe("jobProgress", () => {
   });
   it("counts running as half-complete", () => {
     const job = makeJob();
-    // 6 steps. One done + one running = (1 + 0.5) / 6 = 25%
+    // 7 steps (init, hero, flights, booking, hotels:0, chunk:0, assemble).
+    // One done + one running = (1 + 0.5) / 7 ≈ 21%.
     job.steps = markStepDone(job.steps, "init");
     job.steps = markStepRunning(job.steps, "hero");
-    expect(jobProgress(job)).toBe(25);
+    expect(jobProgress(job)).toBe(21);
   });
 });
 

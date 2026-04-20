@@ -194,7 +194,22 @@ function realisticClaudeStub(): RunnerDeps {
       };
     }
 
-    // Booking prompt
+    // Per-city 4-tier hotels prompt (new pipeline)
+    if (/List 4 real, currently-operating hotels in/.test(prompt)) {
+      const cityMatch = prompt.match(/hotels in ([^,\n]+?)(?:,|\n| for)/);
+      const city = cityMatch ? cityMatch[1].trim() : "Somewhere";
+      return {
+        text: JSON.stringify([
+          { name: `${city} Hostel`, pricePerNight: "$40", rating: 4.0, tier: "hostel", bookingUrl: "https://skyscanner.test" },
+          { name: `${city} Budget Stay`, pricePerNight: "$95", rating: 4.2, tier: "budget", bookingUrl: "https://skyscanner.test" },
+          { name: `${city} Boutique`, pricePerNight: "$180", rating: 4.5, tier: "mid", bookingUrl: "https://skyscanner.test" },
+          { name: `${city} Grand`, pricePerNight: "$340", rating: 4.8, tier: "upscale", bookingUrl: "https://skyscanner.test" },
+        ]),
+        usage: { inputTokens: 40, outputTokens: 100, model: "claude-sonnet-4-6" },
+      };
+    }
+
+    // Booking prompt (flights/tours/tips only — hotels moved out)
     if (/Output:.*hotels.*flights.*tours.*tips/s.test(prompt)) {
       const dest = prompt.match(/Trip to ([^,]+)/)?.[1] ?? "Somewhere";
       return {
