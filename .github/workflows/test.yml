@@ -57,13 +57,17 @@ jobs:
       - run: npm ci
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
-      - name: Run E2E
+      - name: Run E2E (chromium only; mobile + webkit run locally)
         env:
           JWT_SECRET: ci-placeholder-secret-32-chars-minimum
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.ci
           SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.ci
-        run: npm run test:e2e
+          # The auth-flow spec exercises real signup/login against a local
+          # Postgres. CI doesn't provision one, so the spec skips itself
+          # when this env is set.
+          SKIP_REAL_DB_TESTS: "1"
+        run: npx playwright test --project=chromium --reporter=line
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

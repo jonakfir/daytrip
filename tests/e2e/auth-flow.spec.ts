@@ -4,7 +4,16 @@ import { test, expect } from "@playwright/test";
  * End-to-end authentication coverage against a real local Postgres
  * (see playwright.config.ts webServer.env.POSTGRES_URL). Each test
  * creates a fresh throwaway user so the suite is order-independent.
+ *
+ * In CI we set SKIP_REAL_DB_TESTS=1 to skip these — GHA runners don't
+ * provision a Postgres instance. Everything else in the suite runs.
  */
+
+const SKIP_REASON = "auth-flow requires a local Postgres — set SKIP_REAL_DB_TESTS=1 to opt out";
+
+test.beforeEach(async () => {
+  test.skip(!!process.env.SKIP_REAL_DB_TESTS, SKIP_REASON);
+});
 
 function newEmail(tag: string): string {
   return `pw-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`;
