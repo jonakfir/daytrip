@@ -34,15 +34,31 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
-      - name: Build
+      - name: Build (production env — matches Vercel Production deploy)
         env:
-          # Placeholder secrets — just enough for `next build` to collect
-          # page data without crashing. Production uses Vercel env vars.
           JWT_SECRET: ci-placeholder-secret-32-chars-minimum
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.ci
           SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.ci
         run: npm run build
+
+  # Catches module-load regressions that only blow up in zero-env
+  # Preview deploys (where Vercel doesn't inherit every Production
+  # secret). Has caught the JWT_SECRET burn twice — having CI run
+  # this gives us a fast-fail signal so we see the problem in 30s
+  # on a PR check rather than paying for a failed Vercel build.
+  build-preview-sim:
+    name: Build (Vercel Preview simulation — zero env)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Simulate Preview build with no secrets
+        run: npm run build:preview
 
   # Playwright E2E is intentionally NOT a CI gate.
   # The suite (10 specs, 1008 tests) runs locally via `npm run test:e2e`
