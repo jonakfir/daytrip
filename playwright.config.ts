@@ -32,7 +32,13 @@ export default defineConfig({
           JWT_SECRET: "playwright-test-secret-32-chars-minimum-xxx",
           // Local Postgres from brew services. The app lazy-creates its
           // schema on first write, so no manual migration is needed.
-          POSTGRES_URL: `postgres://${process.env.USER}@localhost:5432/daytrip_pw`,
+          // In CI (SKIP_REAL_DB_TESTS=1) we omit POSTGRES_URL so auth
+          // endpoints return a clean 503 instead of crashing on connect.
+          ...(process.env.SKIP_REAL_DB_TESTS
+            ? {}
+            : {
+                POSTGRES_URL: `postgres://pwtest:pwtest@localhost:5432/daytrip_pw`,
+              }),
         },
       },
 });
