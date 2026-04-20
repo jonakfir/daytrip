@@ -24,6 +24,7 @@ export type StepKey =
   | "city_plan"
   | "booking"
   | `chunk:${number}`
+  | `hotels:${number}`
   | "assemble";
 
 export type StepStatus = "pending" | "running" | "done" | "failed";
@@ -71,6 +72,10 @@ export interface TripJob {
     tours: ViatorTour[];
     tips: string[];
   } | null;
+  /** Per-city 4-tier hotel lists, keyed by city name. Populated one
+   *  city per `hotels:{N}` step. Flattened into the final itinerary's
+   *  `hotelsByCity` at assemble time. */
+  hotelsByCity: Record<string, Hotel[]>;
   flightsReal: Flight[] | null;
   finalItinerary: unknown | null;
   steps: StepRecord[];
@@ -120,7 +125,32 @@ export function planSteps(req: GenerateRequest): StepRecord[] {
   if (needsCityPlan(req)) {
     steps.push({ index: i++, key: "city_plan", label: "Plotting cities across your region", status: "pending", attempts: 0 });
   }
-  steps.push({ index: i++, key: "booking", label: "Curating hotels and tours", status: "pending", attempts: 0 });
+  steps.push({ index: i++, key: "booking", label: "Curating flights, tours, and tips", status: "pending", attempts: 0 });
+  // Hotels: when the request already has explicit cities we can plan
+  // the per-city hotel steps up front. For region trips where the
+  // city plan is decided at runtime, the runner inserts hotels:{N}
+  // steps dynamically once city_plan resolves (see insertHotelSteps).
+  if (req.cities && req.cities.length > 0) {
+    const uniq = Array.from(new Set(req.cities.map((c) => c.trim()).filter(Boolean)));
+    for (let c = 0; c < uniq.length; c++) {
+      steps.push({
+        index: i++,
+        key: `hotels:${c}`,
+        label: `Finding stays in ${uniq[c]}`,
+        status: "pending",
+        attempts: 0,
+      });
+    }
+  } else if (!needsCityPlan(req)) {
+    // Single-city trip — one hotels step pinned to the destination.
+    steps.push({
+      index: i++,
+      key: `hotels:0`,
+      label: `Finding stays in ${req.destination.split(",")[0]}`,
+      status: "pending",
+      attempts: 0,
+    });
+  }
   for (let c = 0; c < chunks; c++) {
     const startDay = c * CHUNK_SIZE + 1;
     const endDay = Math.min((c + 1) * CHUNK_SIZE, numDays);
@@ -236,6 +266,43 @@ export function cityByDayFromPlan(
     return map;
   }
   return null;
+}
+
+/**
+ * Insert `hotels:{n}` steps into the ledger after the `city_plan`
+ * step, once the plan resolves. Called by the runner when a region
+ * trip's city_plan has just completed.
+ *
+ * If hotels steps are already present (e.g. from a prior run or
+ * user-picked cities), returns the existing steps unchanged.
+ */
+export function insertHotelSteps(
+  steps: StepRecord[],
+  cities: string[]
+): StepRecord[] {
+  if (steps.some((s) => s.key.startsWith("hotels:"))) return steps;
+  const unique = Array.from(new Set(cities.map((c) => c.trim()).filter(Boolean)));
+  if (unique.length === 0) return steps;
+
+  // Insert after booking (or after city_plan if booking isn't there,
+  // which shouldn't happen but guard anyway), before the first chunk.
+  const insertAfter = steps.findIndex((s) => s.key === "booking");
+  const atIdx = insertAfter >= 0 ? insertAfter + 1 : steps.length;
+
+  const newHotelSteps: StepRecord[] = unique.map((city, c) => ({
+    index: -1, // re-indexed below
+    key: `hotels:${c}` as StepKey,
+    label: `Finding stays in ${city}`,
+    status: "pending",
+    attempts: 0,
+  }));
+
+  const merged = [
+    ...steps.slice(0, atIdx),
+    ...newHotelSteps,
+    ...steps.slice(atIdx),
+  ];
+  return merged.map((s, i) => ({ ...s, index: i }));
 }
 
 /**

@@ -302,7 +302,7 @@ function PricingContent() {
               </h3>
               <p className="font-sans text-body-sm text-charcoal-800/60">
                 If something&apos;s wrong with a trip, email
-                hello@daytrip.travel and we&apos;ll refund you within 24 hours.
+                hello@daytrip-ai.com and we&apos;ll refund you within 24 hours.
               </p>
             </div>
           </div>

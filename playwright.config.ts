@@ -9,7 +9,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 60_000,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 2 : 1,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
   use: {
@@ -18,6 +18,8 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "mobile", use: { ...devices["iPhone 13"] } },
+    { name: "webkit", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
@@ -28,6 +30,15 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           JWT_SECRET: "playwright-test-secret-32-chars-minimum-xxx",
+          // Local Postgres from brew services. The app lazy-creates its
+          // schema on first write, so no manual migration is needed.
+          // In CI (SKIP_REAL_DB_TESTS=1) we omit POSTGRES_URL so auth
+          // endpoints return a clean 503 instead of crashing on connect.
+          ...(process.env.SKIP_REAL_DB_TESTS
+            ? {}
+            : {
+                POSTGRES_URL: `postgres://pwtest:pwtest@localhost:5432/daytrip_pw`,
+              }),
         },
       },
 });

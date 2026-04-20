@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db-client";
 
 /**
  * Vercel Postgres helper for user accounts + payments.

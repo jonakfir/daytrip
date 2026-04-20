@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { getFallbackAlternatives } from "@/lib/activity-fallbacks";
 import type { Activity } from "@/types/itinerary";
 
 const categoryConfig: Record<
@@ -100,23 +101,34 @@ export default function ActivityCard({
     onActivityChange?.(merged);
   };
 
+  const cycleLocal = (pool: Activity[]) => {
+    const nextIndex = (alternativeIndex + 1) % pool.length;
+    setAlternativeIndex(nextIndex);
+    applyActivity(pool[nextIndex]);
+    // Flash the spinning icon briefly for visual feedback on slow swaps;
+    // the actual state swap happens synchronously above.
+    setIsSwapping(true);
+    window.setTimeout(() => setIsSwapping(false), 200);
+  };
+
   const handleChange = async () => {
     setSwapError(null);
 
     // Fast path: cycle through local alternatives if present (demo data)
     if (activity.alternatives && activity.alternatives.length > 0) {
-      setIsSwapping(true);
-      const nextIndex = (alternativeIndex + 1) % activity.alternatives.length;
-      setTimeout(() => {
-        applyActivity(activity.alternatives![nextIndex]);
-        setAlternativeIndex(nextIndex);
-        setIsSwapping(false);
-      }, 200);
+      cycleLocal(activity.alternatives);
       return;
     }
 
-    // Slow path: ask Claude for a replacement via the proxy
+    // Slow path: ask Claude for a replacement via the proxy.
+    // Falls back to a category-based local pool on auth/network failure so
+    // anonymous demo users still get a working swap.
     if (!destination) {
+      const fallback = getFallbackAlternatives(activity);
+      if (fallback.length > 0) {
+        cycleLocal(fallback);
+        return;
+      }
       setSwapError("Can't swap — missing destination");
       return;
     }
@@ -133,6 +145,14 @@ export default function ActivityCard({
         }),
       });
       if (!res.ok) {
+        // Auth / rate-limit / server error → degrade to local fallback pool
+        // instead of showing a raw error to the user.
+        const fallback = getFallbackAlternatives(activity);
+        if (fallback.length > 0) {
+          setIsSwapping(false);
+          cycleLocal(fallback);
+          return;
+        }
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
@@ -140,6 +160,11 @@ export default function ActivityCard({
       if (!data?.activity) throw new Error("No activity returned");
       applyActivity(data.activity);
     } catch (e) {
+      const fallback = getFallbackAlternatives(activity);
+      if (fallback.length > 0) {
+        cycleLocal(fallback);
+        return;
+      }
       setSwapError(
         e instanceof Error ? e.message : "Swap failed. Try again."
       );
@@ -166,12 +191,11 @@ export default function ActivityCard({
         </div>
       )}
 
-      <AnimatePresence mode="wait">
+      <AnimatePresence initial={false}>
         <motion.div
           key={activity.name}
           initial={isSwapping ? { opacity: 0, x: 20 } : false}
           animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
           transition={{ duration: 0.2 }}
           className={cn(
             "group relative flex gap-4 p-4 rounded-xl bg-white border border-cream-200",

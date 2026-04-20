@@ -290,6 +290,83 @@ Rules:
   return Array.isArray(parsed) ? (parsed as DayPlan[]) : [];
 }
 
+/**
+ * Generate 4 tiered hotel options for one city.
+ *
+ * Runs one small Claude call per city (cheap, ~1.5s). The caller
+ * (runner) fan-outs these with Promise.all so a 7-city 47-day trip
+ * spends ~1.5s total on hotels, not 7 × 1.5 = 10.5s.
+ *
+ * Enforced price bands in the prompt (keeps tiers meaningful across
+ * every trip):
+ *   hostel  < $50
+ *   budget  $50 – $130
+ *   mid     $130 – $280
+ *   upscale $280+
+ */
+export async function runHotelsForCityStep(
+  city: string,
+  country: string | undefined,
+  req: GenerateRequest,
+  userId: string | null,
+  deps: TripGeneratorDeps = defaultDeps
+): Promise<Hotel[]> {
+  const system = `Travel editor. Output ONLY a JSON array. No prose, no markdown fences. Real hotels in the given city.`;
+  const locationLine = country ? `${city}, ${country}` : city;
+  const prompt = `List 4 real, currently-operating hotels in ${locationLine} for a ${req.travelers}-traveler ${styleDescriptor(req)} trip (${req.startDate} to ${req.endDate}), one per price tier:
+
+  tier "hostel"  — under $50/night (actual hostel, guesthouse, or hostel-style stay)
+  tier "budget"  — $50 to $130/night
+  tier "mid"     — $130 to $280/night
+  tier "upscale" — $280/night or more
+
+Return a JSON array of exactly 4 objects in tier order (hostel first, upscale last):
+
+[{"name":"<real hotel>","pricePerNight":"$NN","rating":4.2,"tier":"hostel"},
+ {"name":"<real hotel>","pricePerNight":"$NN","rating":4.5,"tier":"budget"},
+ {"name":"<real hotel>","pricePerNight":"$NNN","rating":4.6,"tier":"mid"},
+ {"name":"<real hotel>","pricePerNight":"$NNN","rating":4.8,"tier":"upscale"}]
+
+Rules:
+- Every hotel must actually exist in ${city}. No invented names.
+- Price must fall inside the tier's band. Prefer lower end of each band when possible.
+- Rating is the actual star rating (1–5, decimals OK).`;
+
+  const { text, usage } = await withTimeout(
+    deps.callClaude({
+      system,
+      prompt,
+      model: "claude-sonnet-4-6",
+      maxTokens: 800,
+    }),
+    BOOKING_TIMEOUT_MS,
+    "hotels_city_timeout"
+  );
+  if (userId) {
+    deps.addUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
+  }
+  const parsed = parseClaudeJson(text);
+  if (!Array.isArray(parsed)) return [];
+  const typed = parsed as Array<Partial<Hotel> & { tier?: string }>;
+  return typed
+    .filter((h) => h && typeof h.name === "string" && typeof h.pricePerNight === "string")
+    .map(
+      (h): Hotel => ({
+        name: String(h.name),
+        pricePerNight: String(h.pricePerNight),
+        rating: typeof h.rating === "number" ? h.rating : 4.0,
+        bookingUrl: h.bookingUrl ?? "",
+        image: h.image,
+        city,
+        tier: (["hostel", "budget", "mid", "upscale"] as const).includes(
+          h.tier as "hostel" | "budget" | "mid" | "upscale"
+        )
+          ? (h.tier as Hotel["tier"])
+          : undefined,
+      })
+    );
+}
+
 /** Generate the booking payload (hotels, Claude flight stubs, tours, tips). */
 export async function runBookingStep(
   req: GenerateRequest,

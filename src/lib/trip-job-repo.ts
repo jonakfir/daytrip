@@ -7,7 +7,7 @@
  * setRepoBackend().
  */
 
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db-client";
 import type {
   TripJob,
   StepRecord,
@@ -85,6 +85,7 @@ interface Row {
     tours: ViatorTour[];
     tips: string[];
   } | null;
+  hotels_by_city: Record<string, Hotel[]> | null;
   flights_real: Flight[] | null;
   final_itinerary: unknown | null;
   steps: StepRecord[];
@@ -108,6 +109,7 @@ function rowToJob(r: Row): TripJob {
     cityPlan: r.city_plan,
     dayChunks: r.day_chunks ?? [],
     booking: r.booking,
+    hotelsByCity: r.hotels_by_city ?? {},
     flightsReal: r.flights_real,
     finalItinerary: r.final_itinerary,
     steps: r.steps ?? [],
@@ -154,10 +156,15 @@ async function ensureSchema(): Promise<void> {
       flights_real jsonb,
       final_itinerary jsonb,
       steps jsonb NOT NULL DEFAULT '[]'::jsonb,
+      hotels_by_city jsonb NOT NULL DEFAULT '{}'::jsonb,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );
   `;
+  // Lazy migration for pre-existing deployments that don't yet have
+  // the hotels_by_city column. ADD COLUMN IF NOT EXISTS is a no-op on
+  // fresh installs.
+  await sql`ALTER TABLE trip_jobs ADD COLUMN IF NOT EXISTS hotels_by_city jsonb NOT NULL DEFAULT '{}'::jsonb;`;
   await sql`CREATE INDEX IF NOT EXISTS trip_jobs_user_id_idx    ON trip_jobs(user_id);`;
   await sql`CREATE INDEX IF NOT EXISTS trip_jobs_anon_token_idx ON trip_jobs(anon_token);`;
   await sql`CREATE INDEX IF NOT EXISTS trip_jobs_status_idx     ON trip_jobs(status);`;
@@ -199,7 +206,7 @@ export const postgresRepo: TripJobRepo = {
         id, user_id, anon_token, status, request_json, share_id,
         total_steps, current_step, step_label, error,
         hero_image, city_plan, day_chunks, booking, flights_real,
-        final_itinerary, steps
+        final_itinerary, steps, hotels_by_city
       ) VALUES (
         ${job.id},
         ${job.userId},
@@ -217,7 +224,8 @@ export const postgresRepo: TripJobRepo = {
         ${job.booking ? JSON.stringify(job.booking) : null}::jsonb,
         ${job.flightsReal ? JSON.stringify(job.flightsReal) : null}::jsonb,
         ${job.finalItinerary ? JSON.stringify(job.finalItinerary) : null}::jsonb,
-        ${JSON.stringify(job.steps ?? [])}::jsonb
+        ${JSON.stringify(job.steps ?? [])}::jsonb,
+        ${JSON.stringify(job.hotelsByCity ?? {})}::jsonb
       )
       RETURNING *;
     `;
@@ -255,6 +263,7 @@ export const postgresRepo: TripJobRepo = {
         flights_real = ${merged.flightsReal ? JSON.stringify(merged.flightsReal) : null}::jsonb,
         final_itinerary = ${merged.finalItinerary ? JSON.stringify(merged.finalItinerary) : null}::jsonb,
         steps = ${JSON.stringify(merged.steps ?? [])}::jsonb,
+        hotels_by_city = ${JSON.stringify(merged.hotelsByCity ?? {})}::jsonb,
         updated_at = now()
       WHERE id = ${id}::uuid
       RETURNING *;

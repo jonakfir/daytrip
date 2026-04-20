@@ -384,10 +384,19 @@ export default function CityPage({ params }: Props) {
         </section>
       )}
 
-      <footer className="bg-charcoal-900 text-cream-200/60 py-10 text-center font-sans text-body-sm">
-        <p>
-          &copy; {new Date().getFullYear()} {SITE_NAME}. Plan your next adventure with AI.
-        </p>
+      <footer className="bg-charcoal-900 text-cream-200/60 py-10 font-sans text-body-sm">
+        <div className="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row sm:justify-between items-center gap-4">
+          <p className="text-center sm:text-left">
+            &copy; {new Date().getFullYear()} {SITE_NAME}. Plan your next adventure with AI.
+          </p>
+          <nav className="flex gap-6">
+            <Link href="/destinations" className="hover:text-cream-100">Destinations</Link>
+            <Link href="/about" className="hover:text-cream-100">About</Link>
+            <Link href="/contact" className="hover:text-cream-100">Contact</Link>
+            <Link href="/privacy" className="hover:text-cream-100">Privacy</Link>
+            <Link href="/terms" className="hover:text-cream-100">Terms</Link>
+          </nav>
+        </div>
       </footer>
     </main>
   );

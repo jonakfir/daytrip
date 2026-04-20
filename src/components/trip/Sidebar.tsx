@@ -18,6 +18,10 @@ import type { Flight, Hotel, ViatorTour } from "@/types/itinerary";
 interface SidebarProps {
   flights: Flight[];
   hotels: Hotel[];
+  /** Per-city tiered hotels. When present the UI groups by city with
+   *  4 tier cards each. Falls back to the flat `hotels` list when
+   *  absent (single-city or legacy trips). */
+  hotelsByCity?: Record<string, Hotel[]>;
   tours: ViatorTour[];
 }
 
@@ -83,14 +87,14 @@ function FlightCard({
   return (
     <div
       className={cn(
-        "bg-white rounded-xl p-4 border shadow-sm hover:shadow-md transition-shadow mb-3 relative",
+        "bg-white rounded-xl p-4 border shadow-sm hover:shadow-md transition-shadow mb-3",
         isBestPrice
           ? "border-sage-400/60 ring-1 ring-sage-400/30"
           : "border-cream-200"
       )}
     >
       {isBestPrice && (
-        <div className="absolute -top-2 left-3 bg-sage-500 text-white text-[9px] font-sans font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
+        <div className="inline-flex items-center bg-sage-500 text-white text-[9px] font-sans font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm mb-2">
           Best price
         </div>
       )}
@@ -135,9 +139,39 @@ function FlightCard({
 
 // ─── Hotel card ───────────────────────────────────────────────────────
 
+const TIER_BADGE: Record<string, { label: string; cls: string }> = {
+  hostel: {
+    label: "Hostel",
+    cls: "bg-sage-500/10 text-sage-700 border-sage-500/30",
+  },
+  budget: {
+    label: "Budget",
+    cls: "bg-cream-200 text-charcoal-800 border-cream-300",
+  },
+  mid: {
+    label: "Mid-range",
+    cls: "bg-terracotta-500/10 text-terracotta-600 border-terracotta-500/30",
+  },
+  upscale: {
+    label: "Upscale",
+    cls: "bg-amber-400/15 text-amber-700 border-amber-400/40",
+  },
+};
+
 function HotelCard({ hotel }: { hotel: Hotel }) {
+  const tierBadge = hotel.tier ? TIER_BADGE[hotel.tier] : null;
   return (
     <div className="bg-white rounded-xl p-4 border border-cream-200 shadow-sm hover:shadow-md transition-shadow mb-3">
+      {tierBadge && (
+        <div
+          className={cn(
+            "inline-flex items-center text-[9px] font-sans font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border mb-2",
+            tierBadge.cls
+          )}
+        >
+          {tierBadge.label}
+        </div>
+      )}
       <h4 className="font-serif text-heading text-charcoal-900 mb-1 leading-tight">
         {hotel.name}
       </h4>
@@ -253,7 +287,12 @@ type TourFilterState = {
 
 // ─── Main Sidebar ─────────────────────────────────────────────────────
 
-export default function Sidebar({ flights, hotels, tours }: SidebarProps) {
+export default function Sidebar({
+  flights,
+  hotels,
+  hotelsByCity,
+  tours,
+}: SidebarProps) {
   // Flight filters
   const [flightFilters, setFlightFilters] = useState<FlightFilterState>({
     stops: "any",
@@ -483,7 +522,8 @@ export default function Sidebar({ flights, hotels, tours }: SidebarProps) {
           )}
 
           {/* ─── Hotels ─── */}
-          {hotels.length > 0 && (
+          {(hotels.length > 0 ||
+            (hotelsByCity && Object.keys(hotelsByCity).length > 0)) && (
             <SidebarSection
               title="Hotels"
               icon={HotelIcon}
@@ -547,13 +587,83 @@ export default function Sidebar({ flights, hotels, tours }: SidebarProps) {
                 </FilterPanel>
               )}
 
-              {filteredHotels.length === 0 ? (
-                <EmptyHint>No hotels match your filters.</EmptyHint>
-              ) : (
-                filteredHotels.slice(0, 3).map((hotel, idx) => (
+              {(() => {
+                // When we have a per-city grouping (multi-city trip) the
+                // flat `filteredHotels` can be empty even though there's
+                // plenty to show — trust hotelsByCity in that case.
+                const byCityKeys = hotelsByCity
+                  ? Object.keys(hotelsByCity)
+                  : [];
+                const totalByCity = hotelsByCity
+                  ? Object.values(hotelsByCity).reduce(
+                      (n, list) => n + list.length,
+                      0
+                    )
+                  : 0;
+                const tierOrder = ["hostel", "budget", "mid", "upscale"];
+                const passesFilter = (h: Hotel) => {
+                  const price = parseInt(
+                    h.pricePerNight.replace(/[^0-9]/g, ""),
+                    10
+                  );
+                  if (
+                    hotelFilters.maxPrice !== null &&
+                    !isNaN(price) &&
+                    price > hotelFilters.maxPrice
+                  )
+                    return false;
+                  if (h.rating < hotelFilters.minStars) return false;
+                  return true;
+                };
+
+                if (totalByCity === 0 && filteredHotels.length === 0) {
+                  return (
+                    <EmptyHint>No hotels match your filters.</EmptyHint>
+                  );
+                }
+
+                // Multi-city → group cards under per-city headings.
+                if (byCityKeys.length > 1) {
+                  return (
+                    <div className="space-y-5">
+                      {byCityKeys.map((city) => {
+                        const list = hotelsByCity![city];
+                        const sorted = [...list].sort((a, b) => {
+                          const ai = a.tier ? tierOrder.indexOf(a.tier) : 99;
+                          const bi = b.tier ? tierOrder.indexOf(b.tier) : 99;
+                          return ai - bi;
+                        });
+                        const visible = sorted.filter(passesFilter);
+                        if (visible.length === 0) return null;
+                        return (
+                          <div key={city}>
+                            <h4 className="font-serif text-heading text-charcoal-900 mb-2">
+                              {city}
+                            </h4>
+                            {visible.map((hotel, idx) => (
+                              <HotelCard key={`${city}-${idx}`} hotel={hotel} />
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+
+                // Single-city: prefer the 4-tier list from hotelsByCity,
+                // otherwise fall back to the legacy flat top-4.
+                const singleCityList =
+                  hotelsByCity && Object.values(hotelsByCity)[0]
+                    ? Object.values(hotelsByCity)[0].slice().sort((a, b) => {
+                        const ai = a.tier ? tierOrder.indexOf(a.tier) : 99;
+                        const bi = b.tier ? tierOrder.indexOf(b.tier) : 99;
+                        return ai - bi;
+                      })
+                    : filteredHotels.slice(0, 4);
+                return singleCityList.map((hotel, idx) => (
                   <HotelCard key={idx} hotel={hotel} />
-                ))
-              )}
+                ));
+              })()}
             </SidebarSection>
           )}
 

@@ -1,72 +1,87 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { sql } from "@/lib/db-client";
 import { MOCK_TOKYO_ITINERARY } from "@/lib/mock-data";
+import { ensureItinerariesTable } from "@/lib/trip-job-repo";
 
+/**
+ * Public read-only lookup for a shared itinerary.
+ *
+ * Reads from Vercel Postgres (the same `itineraries` table that
+ * finalizeItinerary writes to). Production has no Supabase — the
+ * previous version of this route used the supabase client which
+ * always returned null in prod, surfacing as "Database not
+ * configured" on every attempt to re-open a saved trip. The user
+ * saw this as "it's not active" and couldn't open anything from
+ * their saved list.
+ */
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const { id } = params;
-
   if (!id) {
-    return NextResponse.json(
-      { error: "Missing share ID" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Missing share ID" }, { status: 400 });
   }
 
-  // Always-available demo trip — used by the homepage Sample Trips section
-  // and the footer "Sample Trips" link. Doesn't require Supabase.
+  // Demo trips don't touch the DB — they're always available for
+  // homepage sample links and footer tiles.
   if (id === "demo" || id === "tokyo-demo-5d") {
     return NextResponse.json({ itinerary: MOCK_TOKYO_ITINERARY });
   }
 
-  if (!supabase) {
+  const isDbConfigured =
+    !!process.env.POSTGRES_URL ||
+    !!process.env.POSTGRES_PRISMA_URL ||
+    !!process.env.DATABASE_URL;
+  if (!isDbConfigured) {
     return NextResponse.json(
       {
-        error: "Database not configured",
-        message:
-          "Supabase is not set up. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables to enable shared itineraries.",
+        error: "db_not_configured",
+        message: "Shared itineraries are not available in this environment.",
       },
-      { status: 404 }
+      { status: 503 }
     );
   }
 
   try {
-    // Fetch itinerary by share_id
-    const { data, error } = await supabase
-      .from("itineraries")
-      .select("*")
-      .eq("share_id", id)
-      .single();
-
-    if (error || !data) {
+    await ensureItinerariesTable();
+    const result = await sql`
+      SELECT itinerary_data, view_count
+      FROM itineraries
+      WHERE share_id = ${id}
+      LIMIT 1;
+    `;
+    const row = result.rows[0] as
+      | { itinerary_data: unknown; view_count: number | null }
+      | undefined;
+    if (!row) {
       return NextResponse.json(
-        { error: "Itinerary not found" },
+        { error: "not_found", message: "Itinerary not found" },
         { status: 404 }
       );
     }
 
-    // Increment view count (fire-and-forget)
-    supabase
-      .from("itineraries")
-      .update({ view_count: (data.view_count ?? 0) + 1 })
-      .eq("share_id", id)
-      .then(({ error: updateError }) => {
-        if (updateError) {
-          console.error("Failed to increment view count:", updateError.message);
-        }
-      });
-
-    // Schema column is `itinerary_data` (see migrations/001_initial_schema.sql);
-    // fall back to `data` for any legacy rows that were stored under the old key.
-    return NextResponse.json({
-      itinerary: data.itinerary_data ?? data.data,
+    // Fire-and-forget view-count increment. Failures are non-fatal —
+    // reads must succeed even if the write is throttled.
+    sql`
+      UPDATE itineraries
+      SET view_count = COALESCE(view_count, 0) + 1
+      WHERE share_id = ${id};
+    `.catch((err) => {
+      console.error(
+        "[share] view_count increment failed:",
+        err instanceof Error ? err.message : err
+      );
     });
-  } catch (error) {
-    console.error("Share lookup failed:", error);
+
+    return NextResponse.json({ itinerary: row.itinerary_data });
+  } catch (err) {
+    console.error(
+      "[share] lookup failed:",
+      err instanceof Error ? err.message : err
+    );
     return NextResponse.json(
-      { error: "Failed to retrieve itinerary" },
+      { error: "lookup_failed", message: "Failed to retrieve itinerary" },
       { status: 500 }
     );
   }

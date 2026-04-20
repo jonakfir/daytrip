@@ -6,7 +6,7 @@
  * bounded so the runner never spends more than the step's budget.
  */
 
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db-client";
 import {
   buildSkyscannerFlightUrl,
   buildSkyscannerHotelUrl,

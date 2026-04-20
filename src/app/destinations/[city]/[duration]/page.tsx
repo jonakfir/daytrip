@@ -98,6 +98,30 @@ type DayPlan = {
   neighborhood?: string;
 };
 
+// Per-duration intro so each /destinations/{city}/{N}-day-itinerary
+// variant leads with unique framing rather than repeating dest.longDescription.
+function durationIntro(name: string, days: number): string {
+  if (days <= 2) {
+    return `Two days in ${name} is a highlight reel — you won't see everything, and that's fine. This plan skips the wishful-thinking itineraries and focuses on the five or six experiences that actually define the city, with enough breathing room between them that you leave feeling like you visited rather than raced.`;
+  }
+  if (days === 3) {
+    return `Three days in ${name} hits the sweet spot — enough time to cover the headline sights, a full day of wandering, and one night where you can afford to stay out late. This itinerary paces the must-sees across the first two days and reserves day three for the places you'd never find without a local tip.`;
+  }
+  if (days === 4) {
+    return `Four days is when ${name} starts to feel less like a checklist and more like a place. You'll cover the essentials, bank a day for a neighborhood you fall in love with, and still have a pocket of time for the trip's inevitable surprise discovery. This plan builds in that slack on purpose.`;
+  }
+  if (days === 5) {
+    return `Five days in ${name} is the classic first-time length — enough to feel unhurried, short enough that every day still feels like an event. The plan below front-loads the big sights on rested legs and saves the looser, more local-flavored days for when the city has started to make sense to you.`;
+  }
+  if (days === 7) {
+    return `A week in ${name} turns a holiday into something closer to a short residency. You can afford a day trip, a slow morning or two, a meal you linger over for three hours. This itinerary paces the week so the famous things never feel like a race and the quiet things have room to land.`;
+  }
+  if (days === 10) {
+    return `Ten days in ${name} is a genuinely generous trip — the kind where you can try a neighborhood, decide it's not for you, and swap it out for a different one the next morning. The plan below covers the city's essentials in the first half and leaves the back half loose enough that you can follow the thread of whatever you've actually fallen for.`;
+  }
+  return `A ${days}-day ${name} itinerary balanced across the city's headline experiences and the slower, more rewarding moments.`;
+}
+
 function buildItinerary(dest: Destination, days: number): DayPlan[] {
   // Sort experiences so the major landmarks come first, food/nightlife later
   const order = ["landmark", "culture", "nature", "neighborhood", "shopping", "food", "nightlife"];
@@ -282,12 +306,13 @@ export default function ItineraryPage({ params }: Props) {
         </div>
       </section>
 
-      {/* Intro */}
+      {/* Intro — framed by trip length so variants don't duplicate copy */}
       <section className="max-w-3xl mx-auto px-6 pt-16 pb-8">
         <p className="font-sans text-body-lg text-charcoal-800 leading-relaxed">
-          {dest.longDescription} This {days}-day itinerary gives you a balanced
-          mix of {dest.name}'s headline experiences and the slower, more
-          rewarding moments — all built around the city's natural rhythm.
+          {durationIntro(dest.name, days)}
+        </p>
+        <p className="font-sans text-body-lg text-charcoal-800/90 leading-relaxed mt-4">
+          {dest.longDescription}
         </p>
       </section>
 
@@ -467,13 +492,21 @@ export default function ItineraryPage({ params }: Props) {
         </div>
       </section>
 
-      <footer className="bg-charcoal-900 text-cream-200/60 py-10 text-center font-sans text-body-sm">
-        <p>
-          &copy; {new Date().getFullYear()} {SITE_NAME}.{" "}
-          <Link href="/destinations" className="hover:text-cream-100">
-            Browse all destinations
-          </Link>
-        </p>
+      <footer className="bg-charcoal-900 text-cream-200/60 py-10 font-sans text-body-sm">
+        <div className="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row sm:justify-between items-center gap-4">
+          <p className="text-center sm:text-left">
+            &copy; {new Date().getFullYear()} {SITE_NAME}.{" "}
+            <Link href="/destinations" className="hover:text-cream-100">
+              Browse all destinations
+            </Link>
+          </p>
+          <nav className="flex gap-6">
+            <Link href="/about" className="hover:text-cream-100">About</Link>
+            <Link href="/contact" className="hover:text-cream-100">Contact</Link>
+            <Link href="/privacy" className="hover:text-cream-100">Privacy</Link>
+            <Link href="/terms" className="hover:text-cream-100">Terms</Link>
+          </nav>
+        </div>
       </footer>
     </main>
   );

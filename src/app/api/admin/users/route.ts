@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db-client";
 import { getServerAuth } from "@/lib/check-auth";
 import { isDbConfigured, listAllUsers, listRecentPayments } from "@/lib/db";
 

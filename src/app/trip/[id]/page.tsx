@@ -42,7 +42,15 @@ async function logTripToLibrary(itinerary: Itinerary): Promise<void> {
 export default function TripPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
-  const [state, setState] = useState<LoadState>({ status: "loading" });
+  // Seed the demo itinerary synchronously so SSR + first paint include
+  // the trip's heading + content. Avoids a bare "Loading…" screen for
+  // the canonical shared demo URL.
+  const [state, setState] = useState<LoadState>(() => {
+    if (id === "demo" || id === "tokyo-demo-5d") {
+      return { status: "ok", itinerary: MOCK_TOKYO_ITINERARY };
+    }
+    return { status: "loading" };
+  });
   const loggedRef = useRef<string | null>(null);
 
   // When the itinerary is loaded for the first time, log it to the user's
@@ -53,6 +61,18 @@ export default function TripPage() {
       loggedRef.current = state.itinerary.shareId;
       void logTripToLibrary(state.itinerary);
     }
+  }, [state]);
+
+  // Keep the browser tab in sync with the loaded itinerary. The layout's
+  // generateMetadata handles the SSR/demo case; this updates the title for
+  // non-demo shares whose data is only available client-side. Format kept
+  // in lockstep with layout.tsx so hydration doesn't flip the tab text.
+  useEffect(() => {
+    if (state.status !== "ok") return;
+    const it = state.itinerary;
+    const days = it.days?.length ?? 0;
+    const prefix = days > 0 ? `Your ${days}-day ${it.destination} itinerary` : `Your ${it.destination} itinerary`;
+    document.title = `${prefix} | Daytrip`;
   }, [state]);
 
   useEffect(() => {

@@ -279,9 +279,9 @@ export default function DestinationSearch({
         className="bg-white rounded-3xl shadow-elevated border border-cream-200 p-6 md:p-8"
       >
         <div className="text-center mb-6">
-          <h2 className="font-serif text-display text-charcoal-900 md:text-display-lg">
+          <h1 className="font-serif text-display text-charcoal-900 md:text-display-lg">
             Your journey begins
-          </h2>
+          </h1>
           <p className="mt-2 font-sans text-body-sm text-charcoal-800/60">
             Plan your perfect trip in seconds
           </p>
@@ -291,7 +291,10 @@ export default function DestinationSearch({
           {/* Origin "from" input */}
           <div>
             <label className="block font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
-              Flying from
+              Flying from{" "}
+              <span className="text-charcoal-800/40 font-normal">
+                (optional)
+              </span>
             </label>
             <PlaceInput
               value={originCity}
@@ -452,8 +455,8 @@ export default function DestinationSearch({
                 <Users className="w-4 h-4 text-charcoal-800/30" />
                 <button
                   type="button"
-                  onClick={() => setTravelers(Math.max(1, travelers - 1))}
-                  className="w-7 h-7 rounded-full border border-cream-300 flex items-center justify-center text-charcoal-800/70 hover:bg-terracotta-500 hover:text-white hover:border-terracotta-500 transition-colors"
+                  onClick={() => setTravelers((n) => Math.max(1, n - 1))}
+                  className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full border border-cream-300 flex items-center justify-center text-charcoal-800/70 hover:bg-terracotta-500 hover:text-white hover:border-terracotta-500 transition-colors"
                   aria-label="Decrease travelers"
                 >
                   −
@@ -463,8 +466,8 @@ export default function DestinationSearch({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setTravelers(Math.min(20, travelers + 1))}
-                  className="w-7 h-7 rounded-full border border-cream-300 flex items-center justify-center text-charcoal-800/70 hover:bg-terracotta-500 hover:text-white hover:border-terracotta-500 transition-colors"
+                  onClick={() => setTravelers((n) => Math.min(20, n + 1))}
+                  className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full border border-cream-300 flex items-center justify-center text-charcoal-800/70 hover:bg-terracotta-500 hover:text-white hover:border-terracotta-500 transition-colors"
                   aria-label="Increase travelers"
                 >
                   +

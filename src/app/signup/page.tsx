@@ -55,24 +55,39 @@ export default function SignupPage() {
           <Link
             href="/"
             className="inline-block font-serif text-display text-charcoal-900"
+            aria-label="Daytrip home"
           >
             Daytrip
           </Link>
-          <p className="mt-2 font-sans text-body-sm text-charcoal-800/50">
+          <h1 className="mt-2 font-serif text-heading-lg text-charcoal-900">
             Create your free account
+          </h1>
+          <p className="mt-1 font-sans text-body-sm text-charcoal-800/50">
+            Plan, save, and share AI-generated itineraries
           </p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-card p-8">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            method="post"
+            action="/api/auth/signup"
+            className="space-y-4"
+          >
             <div>
-              <label className="block text-caption font-sans font-medium text-charcoal-800 mb-2">
+              <label
+                htmlFor="signup-name"
+                className="block text-caption font-sans font-medium text-charcoal-800 mb-2"
+              >
                 Full name
               </label>
               <div className="relative">
                 <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30" />
                 <input
+                  id="signup-name"
+                  name="name"
                   type="text"
+                  autoComplete="name"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Jane Traveler"
@@ -83,13 +98,19 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label className="block text-caption font-sans font-medium text-charcoal-800 mb-2">
+              <label
+                htmlFor="signup-email"
+                className="block text-caption font-sans font-medium text-charcoal-800 mb-2"
+              >
                 Email
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30" />
                 <input
+                  id="signup-email"
+                  name="email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -100,23 +121,30 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label className="block text-caption font-sans font-medium text-charcoal-800 mb-2">
+              <label
+                htmlFor="signup-password"
+                className="block text-caption font-sans font-medium text-charcoal-800 mb-2"
+              >
                 Password
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30" />
                 <input
+                  id="signup-password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 6 characters"
+                  placeholder="At least 8 characters"
                   className="w-full pl-10 pr-10 py-3 bg-cream-100 border border-cream-300 rounded-xl font-sans text-body-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500/50"
                   required
-                  minLength={6}
+                  minLength={8}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal-800/40 hover:text-charcoal-800"
                 >
                   {showPassword ? (

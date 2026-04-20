@@ -42,6 +42,21 @@ function makeClaudeStub(options: {
         usage: { inputTokens: 100, outputTokens: 200, model: "claude-sonnet-4-6" },
       };
     }
+    if (/List 4 real, currently-operating hotels in/.test(prompt)) {
+      // Per-city hotels prompt. Extract the city name from the prompt
+      // so returned hotels carry it.
+      const cityMatch = prompt.match(/hotels in ([^,\n]+?)(?:,|\n| for)/);
+      const city = cityMatch ? cityMatch[1].trim() : "Unknown";
+      return {
+        text: JSON.stringify([
+          { name: `${city} Hostel`, pricePerNight: "$35", rating: 4.0, tier: "hostel" },
+          { name: `${city} Budget Inn`, pricePerNight: "$95", rating: 4.2, tier: "budget" },
+          { name: `${city} Boutique`, pricePerNight: "$180", rating: 4.5, tier: "mid" },
+          { name: `${city} Grand`, pricePerNight: "$350", rating: 4.8, tier: "upscale" },
+        ]),
+        usage: { inputTokens: 30, outputTokens: 60, model: "claude-sonnet-4-6" },
+      };
+    }
     if (new RegExp("Output:[\\s\\S]*hotels[\\s\\S]*flights[\\s\\S]*tours[\\s\\S]*tips").test(prompt)) {
       if (options.bookingDelayMs) await new Promise((r) => setTimeout(r, options.bookingDelayMs));
       return {

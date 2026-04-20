@@ -25,19 +25,22 @@ import {
   cityByDayFromPlan,
   pickDominantCity,
   planSteps,
+  insertHotelSteps,
   isComplete,
 } from "@/lib/trip-job";
 import {
   runCityPlanStep,
   runBookingStep,
   runChunkStep,
+  runHotelsForCityStep,
   buildDatesForTrip,
   dedupeDays,
   defaultDeps,
   type TripGeneratorDeps,
 } from "@/lib/trip-generator";
 import { getRepo } from "@/lib/trip-job-repo";
-import type { GenerateRequest, Itinerary, Flight } from "@/types/itinerary";
+import { flattenHotelsByCity } from "@/lib/itinerary-helpers";
+import type { GenerateRequest, Itinerary, Flight, Hotel } from "@/types/itinerary";
 
 export interface RunnerDeps extends TripGeneratorDeps {
   fetchHero?: (destination: string) => Promise<string | null>;
@@ -157,30 +160,7 @@ async function forceAssemblePartial(
 ): Promise<TripJob> {
   const repo = getRepo();
   try {
-    const req = job.request;
-    const generateId = deps.generateId ?? (() => crypto.randomUUID());
-    const generateShareId =
-      deps.generateShareId ?? (() => Math.random().toString(36).slice(2, 10));
-    const allDays = dedupeDays(job.dayChunks.flatMap((c) => c.days));
-    const booking = job.booking ?? { hotels: [], flights: [], tours: [], tips: [] };
-    const flights = job.flightsReal ?? booking.flights;
-    const itinerary: Itinerary = {
-      id: generateId(),
-      shareId: job.shareId ?? generateShareId(),
-      destination: req.destination,
-      startDate: req.startDate,
-      endDate: req.endDate,
-      travelers: req.travelers,
-      travelStyle: req.style,
-      budget: req.budget ?? "moderate",
-      days: allDays,
-      hotels: booking.hotels,
-      flights,
-      tours: booking.tours,
-      tips: booking.tips,
-      heroImage: job.heroImage ?? undefined,
-      originCity: req.originCity,
-    };
+    const itinerary = buildItinerary(job, deps);
     // Flip every non-done step to done so the ledger reflects reality.
     const sealedSteps = job.steps.map((s) =>
       s.status === "done" ? s : { ...s, status: "done" as const, finishedAt: new Date().toISOString() }
@@ -198,6 +178,51 @@ async function forceAssemblePartial(
       error: `force-assemble failed: ${e instanceof Error ? e.message : String(e)}`,
     });
   }
+}
+
+/**
+ * Build the final Itinerary from everything the runner accumulated on
+ * a TripJob: day chunks, booking payload, per-city hotels, real flight
+ * provider results. Used by both the `assemble` step handler and the
+ * fail-soft force-assemble path so they always agree on shape.
+ */
+function buildItinerary(job: TripJob, deps: RunnerDeps): Itinerary {
+  const req = job.request;
+  const generateId = deps.generateId ?? (() => crypto.randomUUID());
+  const generateShareId =
+    deps.generateShareId ?? (() => Math.random().toString(36).slice(2, 10));
+  const allDays = dedupeDays(job.dayChunks.flatMap((c) => c.days));
+  const booking = job.booking ?? { hotels: [], flights: [], tours: [], tips: [] };
+  const flights = job.flightsReal ?? booking.flights;
+
+  // Prefer per-city hotels when we have them; fall back to the legacy
+  // flat list from `booking`. Flatten into `hotels[]` so older UI
+  // code that doesn't know about grouping still renders something.
+  const hotelsByCity = job.hotelsByCity ?? {};
+  const hasPerCity = Object.keys(hotelsByCity).length > 0;
+  const hotels: Hotel[] = hasPerCity
+    ? flattenHotelsByCity(hotelsByCity)
+    : booking.hotels;
+
+  return {
+    id: generateId(),
+    shareId: job.shareId ?? generateShareId(),
+    destination: req.destination,
+    startDate: req.startDate,
+    endDate: req.endDate,
+    travelers: req.travelers,
+    travelStyle: req.style,
+    budget: req.budget ?? "moderate",
+    days: allDays,
+    hotels,
+    hotelsByCity: hasPerCity ? hotelsByCity : undefined,
+    cityPlan: job.cityPlan ?? undefined,
+    flights,
+    tours: booking.tours,
+    tips: booking.tips,
+    heroImage: job.heroImage ?? undefined,
+    originCity: req.originCity,
+  };
 }
 
 /** Dispatch one step — runs exactly one unit of work. */
@@ -228,12 +253,56 @@ async function executeStep(
 
   if (step.key === "city_plan") {
     const plan = await runCityPlanStep(req, numDays, job.userId, deps);
-    return { steps: job.steps, cityPlan: plan };
+    // Dynamically extend the step ledger with one `hotels:{N}` step
+    // per city in the plan. Runs only on region trips — single-city
+    // and explicit-cities trips already have hotel steps from
+    // planSteps. The totalSteps field is bumped so the client
+    // progress bar reflects the new count.
+    let steps = job.steps;
+    if (plan && plan.length > 0) {
+      const cities = plan.map((e) => e.city);
+      steps = insertHotelSteps(steps, cities);
+    }
+    return { steps, cityPlan: plan };
   }
 
   if (step.key === "booking") {
     const booking = await runBookingStep(req, job.userId, deps);
     return { steps: job.steps, booking };
+  }
+
+  if (step.key.startsWith("hotels:")) {
+    // Resolve which city this step covers: user-picked list, cityPlan
+    // from the coordinator, or fall back to the primary destination.
+    const cityIndex = Number(step.key.split(":")[1]);
+    let cityName: string | undefined;
+    let countryName: string | undefined;
+    const picks = req.cities ?? [];
+    if (picks.length > 0 && cityIndex < picks.length) {
+      cityName = picks[cityIndex];
+    } else if (job.cityPlan && cityIndex < job.cityPlan.length) {
+      cityName = job.cityPlan[cityIndex].city;
+      countryName = job.cityPlan[cityIndex].country;
+    } else {
+      cityName = req.destination.split(",")[0]?.trim();
+    }
+    if (!cityName) {
+      throw new Error(`hotels step ${step.key} has no city to target`);
+    }
+    const cityHotels = await runHotelsForCityStep(
+      cityName,
+      countryName,
+      req,
+      job.userId,
+      deps
+    );
+    return {
+      steps: job.steps,
+      hotelsByCity: {
+        ...(job.hotelsByCity ?? {}),
+        [cityName]: cityHotels,
+      },
+    };
   }
 
   if (step.key.startsWith("chunk:")) {
@@ -264,36 +333,15 @@ async function executeStep(
   }
 
   if (step.key === "assemble") {
-    const generateId = deps.generateId ?? (() => crypto.randomUUID());
-    const generateShareId =
-      deps.generateShareId ?? (() => Math.random().toString(36).slice(2, 10));
-    const allDays = dedupeDays(job.dayChunks.flatMap((c) => c.days));
     // Refuse to produce an empty itinerary. Zero days means every chunk
     // failed permanently — let the step be marked failed so the top-
     // level runner flips the job to "failed" instead of silently
     // emitting a day-less shell.
+    const allDays = dedupeDays(job.dayChunks.flatMap((c) => c.days));
     if (allDays.length === 0) {
       throw new Error("cannot assemble: no day data produced by any chunk");
     }
-    const booking = job.booking ?? { hotels: [], flights: [], tours: [], tips: [] };
-    const flights = job.flightsReal ?? booking.flights;
-    const itinerary: Itinerary = {
-      id: generateId(),
-      shareId: job.shareId ?? generateShareId(),
-      destination: req.destination,
-      startDate: req.startDate,
-      endDate: req.endDate,
-      travelers: req.travelers,
-      travelStyle: req.style,
-      budget: req.budget ?? "moderate",
-      days: allDays,
-      hotels: booking.hotels,
-      flights,
-      tours: booking.tours,
-      tips: booking.tips,
-      heroImage: job.heroImage ?? undefined,
-      originCity: req.originCity,
-    };
+    const itinerary = buildItinerary(job, deps);
     return {
       steps: job.steps,
       finalItinerary: itinerary,
@@ -353,6 +401,7 @@ export async function createJob(
     cityPlan: null,
     dayChunks: [],
     booking: null,
+    hotelsByCity: {},
     flightsReal: null,
     finalItinerary: null,
     steps,

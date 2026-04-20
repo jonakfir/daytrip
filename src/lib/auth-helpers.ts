@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db-client";
 import { isDbConfigured } from "@/lib/db";
 import type { AuthUser } from "@/lib/check-auth";
 
