@@ -408,12 +408,18 @@ export default function DestinationSearch({
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             {/* Start date */}
             <div className="relative md:col-span-1">
-              <label className="flex items-center gap-1.5 font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+              <label
+                htmlFor="trip-start-date"
+                className="flex items-center gap-1.5 font-sans text-caption font-medium text-charcoal-800/60 mb-1.5"
+              >
                 <Calendar className="w-3.5 h-3.5" />
                 Start date
               </label>
               <input
+                id="trip-start-date"
+                name="startDate"
                 type="date"
+                aria-label="Trip start date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="w-full appearance-none min-h-[44px] px-3 py-2.5 bg-cream-50 border border-cream-200 rounded-xl font-sans text-base text-charcoal-900 focus:outline-none focus:ring-2 focus:ring-terracotta-500/40"
@@ -422,12 +428,18 @@ export default function DestinationSearch({
 
             {/* End date */}
             <div className="relative md:col-span-1">
-              <label className="flex items-center gap-1.5 font-sans text-caption font-medium text-charcoal-800/60 mb-1.5">
+              <label
+                htmlFor="trip-end-date"
+                className="flex items-center gap-1.5 font-sans text-caption font-medium text-charcoal-800/60 mb-1.5"
+              >
                 <Calendar className="w-3.5 h-3.5" />
                 End date
               </label>
               <input
+                id="trip-end-date"
+                name="endDate"
                 type="date"
+                aria-label="Trip end date"
                 value={endDate}
                 onChange={(e) => {
                   setEndDate(e.target.value);
