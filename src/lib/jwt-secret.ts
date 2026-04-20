@@ -13,21 +13,19 @@
 import crypto from "node:crypto";
 
 const raw = process.env.JWT_SECRET?.trim();
-const isProd = process.env.NODE_ENV === "production";
 
 function resolveSecret(): string {
   if (raw) return raw;
-  if (isProd) {
-    throw new Error(
-      "JWT_SECRET is not set. Add it to Vercel env vars and redeploy."
-    );
-  }
-  // Dev / test fallback: ephemeral secret scoped to this process.
-  // Regenerated on every restart so no long-lived session is trusted.
+  // No JWT_SECRET available. Don't throw at module load — that breaks
+  // `next build`'s "Collecting page data" phase on Preview deploys that
+  // don't have JWT_SECRET wired into env. Instead, generate an ephemeral
+  // per-process secret. It's random 256-bit so attackers can't forge
+  // tokens against it; the only downside is sessions don't survive a
+  // cold start. Production always sets the real env var via Vercel.
   const ephemeral = crypto.randomBytes(32).toString("hex");
   // eslint-disable-next-line no-console
   console.warn(
-    "[jwt-secret] JWT_SECRET unset — using ephemeral dev secret. Set JWT_SECRET in .env.local to persist sessions across restarts."
+    "[jwt-secret] JWT_SECRET unset — using ephemeral per-process secret. Set JWT_SECRET in env to persist sessions across restarts."
   );
   return ephemeral;
 }
