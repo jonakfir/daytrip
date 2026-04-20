@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:preview": "node scripts/simulate-vercel-build.js",
+    "preflight": "node scripts/simulate-vercel-build.js && vitest run --reporter=dot",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
