@@ -43,8 +43,16 @@ export default function AccountPage() {
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((j) => setMe(j))
-      .catch(() => setMe({ authenticated: false, email: null, role: null, isAdmin: false }));
+      .then((j: Me) => {
+        if (!j?.authenticated) {
+          router.replace("/login?next=/account");
+          return;
+        }
+        setMe(j);
+      })
+      .catch(() => {
+        router.replace("/login?next=/account");
+      });
     // /api/me/credits returns 401 for unauthenticated; only store the body
     // when the response is 2xx so we don't pollute `credits` state with an
     // {error:"Unauthorized"} object that breaks the render below.
@@ -52,7 +60,7 @@ export default function AccountPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => setCredits(j))
       .catch(() => setCredits(null));
-  }, []);
+  }, [router]);
 
   const buyTrip = async () => {
     setBuying(true);

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence, useMotionValueEvent, useScroll } from "framer-motion";
+import { motion, useMotionValueEvent, useScroll } from "framer-motion";
 import Link from "next/link";
 import { Menu, Map as MapIcon, Shield, User as UserIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsNativeApp } from "@/lib/useIsNativeApp";
+import { useAuth } from "@/lib/auth-context";
 
 const navLinks = [
   { label: "Destinations", href: "/destinations" },
@@ -15,20 +16,11 @@ const navLinks = [
 ];
 const nativeNavLinks = navLinks.filter((l) => l.href !== "/pricing");
 
-interface AuthState {
-  authenticated: boolean;
-  isAdmin: boolean;
-  email: string | null;
-}
-
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [auth, setAuth] = useState<AuthState>({
-    authenticated: false,
-    isAdmin: false,
-    email: null,
-  });
+  const { authenticated, isAdmin, email } = useAuth();
+  const auth = { authenticated, isAdmin, email };
   const { scrollY } = useScroll();
   const isNative = useIsNativeApp();
   const visibleLinks = isNative ? nativeNavLinks : navLinks;
@@ -48,19 +40,6 @@ export default function Navbar() {
   useMotionValueEvent(scrollY, "change", (latest) => {
     setScrolled(latest > 40);
   });
-
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((j) =>
-        setAuth({
-          authenticated: !!j.authenticated,
-          isAdmin: !!j.isAdmin,
-          email: j.email || null,
-        })
-      )
-      .catch(() => {});
-  }, []);
 
   const handleAnchorClick = (
     e: React.MouseEvent<HTMLAnchorElement>,
@@ -97,7 +76,7 @@ export default function Navbar() {
         </Link>
 
         <div className="flex items-center gap-6">
-          <div className="hidden items-center gap-5 md:flex">
+          <div className="hidden items-center gap-5 lg:flex">
             {visibleLinks.map((link) => (
               <a
                 key={link.label}
@@ -119,33 +98,34 @@ export default function Navbar() {
               {auth.isAdmin && (
                 <Link
                   href="/admin"
-                  className="hidden sm:flex items-center gap-1.5 rounded-full border border-terracotta-500/30 bg-terracotta-500/10 px-3 py-1.5 font-sans text-caption font-medium text-terracotta-600 transition-colors hover:bg-terracotta-500/20"
+                  className="hidden sm:flex items-center gap-1.5 rounded-full border border-terracotta-500/30 bg-terracotta-500/10 px-4 py-2.5 font-sans text-caption font-medium text-terracotta-600 transition-colors hover:bg-terracotta-500/20 min-h-[44px]"
                 >
-                  <Shield className="w-3 h-3" />
+                  <Shield className="w-3.5 h-3.5" />
                   Admin
                 </Link>
               )}
               <Link
                 href="/trips"
-                className="hidden sm:flex items-center gap-1.5 rounded-full bg-cream-200/60 px-3 py-1.5 font-sans text-caption font-medium text-charcoal-800/80 transition-colors hover:bg-cream-200"
+                className="hidden sm:flex items-center gap-1.5 rounded-full bg-cream-200/60 px-4 py-2.5 font-sans text-caption font-medium text-charcoal-800/80 transition-colors hover:bg-cream-200 min-h-[44px]"
               >
-                <MapIcon className="w-3 h-3" />
+                <MapIcon className="w-3.5 h-3.5" />
                 My trips
               </Link>
               <Link
                 href="/account"
-                className="hidden sm:flex items-center gap-1.5 rounded-full bg-cream-200/60 px-3 py-1.5 font-sans text-caption font-medium text-charcoal-800/80 transition-colors hover:bg-cream-200"
+                className="hidden sm:flex items-center gap-1.5 rounded-full bg-cream-200/60 px-4 py-2.5 font-sans text-caption font-medium text-charcoal-800/80 transition-colors hover:bg-cream-200 min-h-[44px]"
               >
-                <UserIcon className="w-3 h-3" />
+                <UserIcon className="w-3.5 h-3.5" />
                 {auth.email?.split("@")[0] || "Account"}
               </Link>
               <button
+                type="button"
                 onClick={() => {
                   const el = document.getElementById("plan");
                   if (el) el.scrollIntoView({ behavior: "smooth" });
                   else window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className="rounded-full bg-terracotta-500 px-5 py-2 font-sans text-body-sm font-medium text-white transition-colors hover:bg-terracotta-600"
+                className="rounded-full bg-terracotta-500 px-5 py-2.5 font-sans text-body-sm font-medium text-white transition-colors hover:bg-terracotta-600 min-h-[44px]"
               >
                 Plan a trip
               </button>
@@ -154,13 +134,13 @@ export default function Navbar() {
             <div className="flex items-center gap-3">
               <Link
                 href="/login"
-                className="hidden sm:block font-sans text-body-sm font-medium text-charcoal-800/70 transition-colors duration-300 hover:text-charcoal-900"
+                className="hidden sm:flex items-center px-3 py-2.5 font-sans text-body-sm font-medium text-charcoal-800/70 transition-colors duration-300 hover:text-charcoal-900 min-h-[44px]"
               >
                 Log in
               </Link>
               <Link
                 href="/signup"
-                className="hidden sm:block rounded-full bg-terracotta-500 px-5 py-2 font-sans text-body-sm font-medium text-white transition-colors hover:bg-terracotta-600"
+                className="hidden sm:flex items-center rounded-full bg-terracotta-500 px-5 py-2.5 font-sans text-body-sm font-medium text-white transition-colors hover:bg-terracotta-600 min-h-[44px]"
               >
                 Sign up
               </Link>
@@ -172,7 +152,9 @@ export default function Navbar() {
             type="button"
             onClick={() => setMobileOpen(true)}
             aria-label="Open menu"
-            className="md:hidden -mr-2 rounded-full p-2 text-charcoal-900 hover:bg-cream-200/60 transition-colors"
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-nav-drawer"
+            className="lg:hidden -mr-1 rounded-full p-2.5 text-charcoal-900 hover:bg-cream-200/60 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
           >
             <Menu className="h-6 w-6" />
           </button>
@@ -180,24 +162,35 @@ export default function Navbar() {
       </nav>
 
       {/* Mobile drawer */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-[60] bg-charcoal-900/40 backdrop-blur-sm md:hidden"
-              onClick={() => setMobileOpen(false)}
-            />
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 30, stiffness: 280 }}
-              className="fixed right-0 top-0 z-[61] h-full w-[85%] max-w-sm bg-cream-100 shadow-elevated md:hidden flex flex-col"
-            >
+      {/* Mobile drawer — always mounted. Inline transform/opacity avoids
+          any conflict with framer-motion on the parent <motion.header>. */}
+      <div
+        className="lg:hidden"
+        aria-hidden={!mobileOpen}
+        style={{
+          pointerEvents: mobileOpen ? "auto" : "none",
+        }}
+      >
+        <div
+          className="fixed inset-0 z-[60] bg-charcoal-900/40 backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)}
+          style={{
+            opacity: mobileOpen ? 1 : 0,
+            transition: "opacity 200ms ease-out",
+          }}
+        />
+        <div
+          id="mobile-nav-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Main menu"
+          className="fixed right-0 top-0 z-[61] h-full w-[85%] max-w-sm bg-cream-100 shadow-elevated flex flex-col"
+          style={{
+            transform: mobileOpen ? "translate3d(0,0,0)" : "translate3d(100%,0,0)",
+            transition: "transform 300ms cubic-bezier(0.22, 1, 0.36, 1)",
+            willChange: "transform",
+          }}
+        >
               <div className="flex items-center justify-between px-6 py-4 border-b border-cream-200">
                 <span className="font-serif text-heading-lg text-charcoal-900">
                   Daytrip
@@ -213,21 +206,36 @@ export default function Navbar() {
               </div>
 
               <nav className="flex flex-col px-6 py-6 gap-1">
-                {visibleLinks.map((link) => (
-                  <a
-                    key={link.label}
-                    href={link.href}
-                    onClick={(e) => {
-                      setMobileOpen(false);
-                      if (link.href.startsWith("#")) {
-                        handleAnchorClick(e, link.href);
-                      }
-                    }}
-                    className="font-serif text-heading text-charcoal-900 py-3 border-b border-cream-200/60 hover:text-terracotta-500 transition-colors"
-                  >
-                    {link.label}
-                  </a>
-                ))}
+                {visibleLinks.map((link) => {
+                  const isHash = link.href.startsWith("#");
+                  if (isHash) {
+                    return (
+                      <a
+                        key={link.label}
+                        href={link.href}
+                        onClick={(e) => {
+                          setMobileOpen(false);
+                          handleAnchorClick(e, link.href);
+                        }}
+                        className="font-serif text-heading text-charcoal-900 py-3 border-b border-cream-200/60 hover:text-terracotta-500 transition-colors"
+                      >
+                        {link.label}
+                      </a>
+                    );
+                  }
+                  // Real route changes: use next/link for client-side nav so
+                  // the drawer unmounts with the page. No onClick → no race.
+                  return (
+                    <Link
+                      key={link.label}
+                      href={link.href}
+                      onClick={() => setMobileOpen(false)}
+                      className="font-serif text-heading text-charcoal-900 py-3 border-b border-cream-200/60 hover:text-terracotta-500 transition-colors"
+                    >
+                      {link.label}
+                    </Link>
+                  );
+                })}
               </nav>
 
               <div className="mt-auto px-6 pb-8 pt-6 border-t border-cream-200 flex flex-col gap-3">
@@ -279,10 +287,8 @@ export default function Navbar() {
                   </>
                 )}
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+        </div>
+      </div>
     </motion.header>
   );
 }

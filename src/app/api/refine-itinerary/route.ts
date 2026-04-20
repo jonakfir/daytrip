@@ -8,6 +8,7 @@ import {
 import { isAdminRequest } from "@/lib/check-auth";
 import { addClaudeUsage, hasClaudeBudget } from "@/lib/db";
 import { isPlaceInDestination } from "@/lib/verify-place";
+import { parseClaudeJson } from "@/lib/trip-generator";
 import type { Activity, Itinerary } from "@/types/itinerary";
 import { JWT_SECRET } from "@/lib/jwt-secret";
 
@@ -20,21 +21,41 @@ interface RefineRequest {
 }
 
 interface JwtPayload {
-  email?: string;
   userId?: string;
-  role?: string;
 }
 
-function stripFences(text: string): string {
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return fenceMatch ? fenceMatch[1].trim() : text.trim();
-}
+/**
+ * Fields the chatbot is allowed to mutate. Anything NOT in this set is
+ * stripped before we hand the request to Claude AND re-asserted on
+ * whatever comes back, so a misbehaving prompt can never, say, change
+ * the trip's share ID or swap travelers from 2 → 7.
+ */
+const MUTABLE_FIELDS: Array<keyof Itinerary> = [
+  "destination",
+  "travelStyle",
+  "budget",
+  "days",
+  "hotels",
+  "hotelsByCity",
+  "cityPlan",
+  "flights",
+  "tours",
+  "tips",
+  "heroImage",
+];
+const IMMUTABLE_FIELDS = new Set<keyof Itinerary>([
+  "id",
+  "shareId",
+  "startDate",
+  "endDate",
+  "travelers",
+  "originCity",
+]);
 
 export async function POST(req: NextRequest) {
   try {
     const authCookie = req.cookies.get("daytrip-auth")?.value;
     const admin = await isAdminRequest(authCookie);
-
     let userId: string | null = null;
     if (authCookie) {
       try {
@@ -44,15 +65,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (!admin && !userId) {
-      return NextResponse.json(
-        { error: "auth_required" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "auth_required" }, { status: 401 });
     }
 
-    // Silent per-credit usage cap: if the user has exhausted their $1 of
-    // Claude budget on this credit, refuse refinement. Surface as a
-    // generic message — we never reveal the dollar count.
+    // Silent per-credit budget cap
     if (!admin && userId) {
       const ok = await hasClaudeBudget(userId);
       if (!ok) {
@@ -69,10 +85,7 @@ export async function POST(req: NextRequest) {
     try {
       body = (await req.json()) as RefineRequest;
     } catch {
-      return NextResponse.json(
-        { error: "Invalid JSON body" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
     if (!body?.itinerary || !body?.message?.trim()) {
       return NextResponse.json(
@@ -82,209 +95,184 @@ export async function POST(req: NextRequest) {
     }
 
     if (!isClaudeConfigured()) {
-      return NextResponse.json(
-        { error: "Claude not configured" },
-        { status: 503 }
-      );
+      return NextResponse.json({ error: "Claude not configured" }, { status: 503 });
     }
 
-    // Send only the parts of the itinerary that are useful for refinement —
-    // skip hotels/flights/tours/tips since the user is refining day plans.
-    const compactItinerary = {
-      destination: body.itinerary.destination,
-      startDate: body.itinerary.startDate,
-      endDate: body.itinerary.endDate,
-      travelers: body.itinerary.travelers,
-      travelStyle: body.itinerary.travelStyle,
-      days: body.itinerary.days.map((d) => ({
-        dayNumber: d.dayNumber,
-        date: d.date,
-        title: d.title,
-        morning: d.morning.map((a) => ({
-          time: a.time,
-          name: a.name,
-          category: a.category,
-          description: a.description,
-          duration: a.duration,
-        })),
-        afternoon: d.afternoon.map((a) => ({
-          time: a.time,
-          name: a.name,
-          category: a.category,
-          description: a.description,
-          duration: a.duration,
-        })),
-        evening: d.evening.map((a) => ({
-          time: a.time,
-          name: a.name,
-          category: a.category,
-          description: a.description,
-          duration: a.duration,
-        })),
-        tip: d.tip,
-      })),
-    };
+    // Send the FULL mutable itinerary to Claude. The chatbot's job is to
+    // make any change the user asks for — hotels, flights, tours, tips,
+    // the hero image, the travel style, the day plans. Everything below
+    // the immutable trip identity (id/shareId/dates/travelers) is fair
+    // game. Anything Claude doesn't change it must echo back verbatim.
+    const mutableItinerary: Partial<Itinerary> = {};
+    for (const field of MUTABLE_FIELDS) {
+      if (body.itinerary[field] !== undefined) {
+        // Narrow any to the field's own type; both sides are Itinerary.
+        (mutableItinerary as Record<string, unknown>)[field] =
+          body.itinerary[field];
+      }
+    }
 
-    const systemPrompt = `Travel editor. Output ONLY a single JSON object. No prose, no markdown fences, no explanation outside the JSON. The JSON object has exactly two keys: "reply" (a friendly 1-sentence string explaining what you changed) and "days" (the full updated days array).
+    const systemPrompt = `You are a travel editor chatbot embedded in a trip itinerary app. The user is viewing a finished itinerary and may ask for any kind of change: swap a restaurant, move a day, replace a hotel tier, find cheaper flights, update the hero image search term, change the travel style, rewrite a tip.
 
-STRICT RULES:
-- Only modify what the user asked about. Preserve everything else exactly.
-- GEOGRAPHY (CRITICAL): Every place you suggest MUST be physically located IN the destination city. Not "near", not "in the same country". If you aren't 100% certain a place is in the destination, pick a different real place you ARE certain about.
-- Use real place names that actually exist in the destination city.
-- Meal timing: morning food = breakfast/brunch, afternoon food = lunch, evening food = dinner.`;
+Output ONLY a single JSON object. No prose, no markdown fences, no explanation outside the JSON. The JSON object has exactly two keys:
+  "reply" — a friendly 1-2 sentence string describing what you changed (conversational, plain English).
+  "itinerary" — the FULL updated itinerary object.
 
-    const userPrompt = `Current itinerary for ${compactItinerary.destination}:
-${JSON.stringify(compactItinerary, null, 2)}
+CRITICAL RULES:
+1. Echo every field the user didn't ask you to change EXACTLY as it was in the input. Don't paraphrase, don't re-style, don't reorder. If the user asked to swap day 3's lunch, only day 3's afternoon block changes.
+2. Only modify fields relevant to the user's request. Leave the rest alone.
+3. GEOGRAPHY: every NEW place (restaurants, hotels, attractions, tours) must be physically located in the appropriate city. Multi-city trips should pin each activity to the day's city. If you're not 100% sure a place exists there, pick a different real place you ARE sure about.
+4. Meal timing stays intact: morning = breakfast / brunch, afternoon = lunch, evening = dinner.
+5. Keep the same schema shape as the input. Activity needs: time (HH:MM), name, category (food|culture|shopping|nature|entertainment|transport), description, duration. Hotel needs: name, pricePerNight, rating (number), bookingUrl, and optionally city + tier (hostel|budget|mid|upscale). Flight needs: airline, departure, arrival, price, bookingUrl, stops, originAirport, destinationAirport. Tour needs: name, price, duration, rating, bookingUrl. Tips are strings.
+6. If the user asks for something out of scope (billing, payment, account), reply briefly explaining it's out of scope and echo the itinerary unchanged.`;
 
-User's request: ${body.message.trim()}
+    const userPrompt = `Current itinerary:
+${JSON.stringify(mutableItinerary, null, 2)}
 
-Respond with a single JSON object (no markdown, no code fences, no text outside the JSON):
-{"reply":"one sentence about what you changed","days":[...the full updated days array...]}
+Immutable (DO NOT CHANGE): dates ${body.itinerary.startDate} → ${body.itinerary.endDate}, ${body.itinerary.travelers} travelers.
 
-Each Activity needs: time (HH:MM), name, category (food|culture|shopping|nature|entertainment|transport), description (1-2 sentences), duration.
-Keep activities not mentioned unchanged. Every place must be real and in ${compactItinerary.destination}.`;
+User request: ${body.message.trim()}
+
+Return JSON: {"reply":"...","itinerary":{...the full updated itinerary with ALL the same top-level fields as the input, even the ones you didn't change...}}`;
 
     const { text, usage } = await callClaudeWithUsage({
       system: systemPrompt,
       prompt: userPrompt,
       model: "claude-sonnet-4-6",
-      maxTokens: 8000,
+      maxTokens: 16_000,
     });
     if (userId && !admin) {
       addClaudeUsage(userId, estimateUsageCents(usage)).catch(() => undefined);
     }
 
-    // Parse the JSON object — Claude should return {"reply":"...","days":[...]}
     let reply = "Itinerary updated.";
-    let newDays: typeof body.itinerary.days | null = null;
-    let parseError: string | null = null;
+    let newMutable: Partial<Itinerary> | null = null;
 
     try {
-      const cleaned = stripFences(text);
-      const parsed = JSON.parse(cleaned);
+      const parsed = parseClaudeJson(text) as {
+        reply?: unknown;
+        itinerary?: unknown;
+      };
       if (parsed && typeof parsed === "object") {
         if (typeof parsed.reply === "string") reply = parsed.reply;
-        if (Array.isArray(parsed.days) && parsed.days.length > 0) {
-          newDays = parsed.days;
-        } else {
-          parseError = "Parsed JSON but 'days' was empty or missing";
+        if (parsed.itinerary && typeof parsed.itinerary === "object") {
+          newMutable = parsed.itinerary as Partial<Itinerary>;
         }
-      } else {
-        parseError = "Parsed JSON but not an object";
       }
     } catch (e) {
-      parseError = e instanceof Error ? e.message : "JSON parse failed";
-      // Fallback: try to extract a JSON object from mixed prose + JSON
-      const objMatch = text.match(/\{[\s\S]*"days"\s*:\s*\[[\s\S]*\]\s*\}/);
-      if (objMatch) {
-        try {
-          const parsed = JSON.parse(objMatch[0]);
-          if (typeof parsed.reply === "string") reply = parsed.reply;
-          if (Array.isArray(parsed.days) && parsed.days.length > 0) {
-            newDays = parsed.days;
-            parseError = null;
-          }
-        } catch {
-          // give up
-        }
-      }
-    }
-
-    // If parsing failed, tell the user we couldn't apply the change.
-    // This prevents the diverged-reply bug where the LLM says "I swapped X
-    // for Y" but the rendered itinerary never updates.
-    if (!newDays) {
       console.warn(
         "refine-itinerary parse failure:",
-        parseError,
-        "raw response:",
+        e instanceof Error ? e.message : e,
+        "raw:",
         text.slice(0, 500)
       );
+    }
+
+    // If parsing failed or Claude produced no itinerary, return the
+    // original and a polite apology rather than a broken UI state.
+    if (!newMutable) {
       return NextResponse.json({
         reply:
-          "Hmm — I tried to make that change but couldn't. Can you rephrase or try a more specific request?",
+          "Hmm — I tried to make that change but couldn't parse the result. Can you rephrase or try a more specific request?",
         itinerary: body.itinerary,
         unchanged: true,
       });
     }
 
-    // ── Post-validation: catch out-of-city hallucinations ────────────
-    // Claude sometimes suggests famous restaurants that are in OTHER cities
-    // (e.g. "Zahav" for New York, which is actually in Philadelphia).
-    // We verify every NEW food activity against OSM and revert any that
-    // aren't actually in the destination city.
+    // Merge: start from the original itinerary, then overlay every
+    // mutable field Claude returned. This guarantees immutable fields
+    // stay untouched even if Claude accidentally echoed them.
+    const merged: Itinerary = { ...body.itinerary };
+    const newMutableAsRec = newMutable as unknown as Record<string, unknown>;
+    const mergedAsRec = merged as unknown as Record<string, unknown>;
+    for (const field of MUTABLE_FIELDS) {
+      const val = newMutableAsRec[field as string];
+      if (val !== undefined) {
+        mergedAsRec[field as string] = val;
+      }
+    }
+    // Defensive: re-apply immutable fields from the original regardless
+    // of what Claude returned.
+    const originalAsRec = body.itinerary as unknown as Record<string, unknown>;
+    for (const field of IMMUTABLE_FIELDS) {
+      mergedAsRec[field as string] = originalAsRec[field as string];
+    }
+
+    // ── Geography post-check on FOOD only ───────────────────────────
+    // Food is the highest-risk category for out-of-city hallucinations
+    // (famous restaurants get pulled from other cities). Hotels, tours,
+    // and flights have their own city / IATA context and aren't run
+    // through OSM. Multi-city trips: gate against the day's city when
+    // cityPlan covers that day.
     const destination = body.itinerary.destination;
+    const cityPlan = merged.cityPlan;
     const oldDays = body.itinerary.days;
-    const changedFoodPositions: Array<{
+    const newDays = merged.days;
+
+    interface ChangedFood {
       dayIdx: number;
       block: "morning" | "afternoon" | "evening";
       actIdx: number;
       oldActivity: Activity;
       newActivity: Activity;
-    }> = [];
+      dayCity: string;
+    }
+    const changed: ChangedFood[] = [];
 
     for (let di = 0; di < Math.min(newDays.length, oldDays.length); di++) {
       const oldDay = oldDays[di];
       const newDay = newDays[di];
+      const dayNumber = newDay.dayNumber;
+      const cityEntry = cityPlan?.find(
+        (c) => dayNumber >= c.startDay && dayNumber <= c.endDay
+      );
+      const dayCity = cityEntry?.city ?? destination;
+
       for (const block of ["morning", "afternoon", "evening"] as const) {
         const oldBlock = oldDay[block] ?? [];
         const newBlock = newDay[block] ?? [];
         for (let ai = 0; ai < newBlock.length; ai++) {
           const na = newBlock[ai];
           const oa = oldBlock[ai];
-          if (
-            na?.category === "food" &&
-            (!oa || oa.name !== na.name)
-          ) {
-            changedFoodPositions.push({
+          if (na?.category === "food" && (!oa || oa.name !== na.name)) {
+            changed.push({
               dayIdx: di,
               block,
               actIdx: ai,
               oldActivity: oa ?? na,
               newActivity: na,
+              dayCity,
             });
           }
         }
       }
     }
 
-    // Verify in parallel — Photon handles concurrent requests fine
     const verifications = await Promise.all(
-      changedFoodPositions.map(({ newActivity }) =>
-        isPlaceInDestination(newActivity.name, destination)
-      )
+      changed.map((c) => isPlaceInDestination(c.newActivity.name, c.dayCity))
     );
 
     const rejected: string[] = [];
-    for (let idx = 0; idx < changedFoodPositions.length; idx++) {
+    for (let idx = 0; idx < changed.length; idx++) {
       if (!verifications[idx]) {
-        const pos = changedFoodPositions[idx];
+        const pos = changed[idx];
         rejected.push(pos.newActivity.name);
-        // Revert this one activity to the original
-        newDays[pos.dayIdx][pos.block][pos.actIdx] = pos.oldActivity;
-        console.warn(
-          `[refine-itinerary] Rejected out-of-city food: ${pos.newActivity.name} (destination: ${destination})`
-        );
+        merged.days[pos.dayIdx][pos.block][pos.actIdx] = pos.oldActivity;
       }
     }
 
-    // If we rejected anything, prepend a note to the reply so the user
-    // knows some changes were blocked.
     if (rejected.length > 0) {
       const list = rejected.slice(0, 3).join(", ");
       reply = `${reply}  (Note: I tried suggesting ${list}${
         rejected.length > 3 ? " and others" : ""
-      } but those aren't actually in ${destination.split(",")[0]}, so I kept the original pick${rejected.length > 1 ? "s" : ""} for those slot${rejected.length > 1 ? "s" : ""}.)`;
+      } but those aren't actually in the day's city, so I kept the original pick${
+        rejected.length > 1 ? "s" : ""
+      }.)`;
     }
-
-    const updatedItinerary: Itinerary = {
-      ...body.itinerary,
-      days: newDays,
-    };
 
     return NextResponse.json({
       reply,
-      itinerary: updatedItinerary,
+      itinerary: merged,
       rejectedPlaces: rejected,
     });
   } catch (e) {

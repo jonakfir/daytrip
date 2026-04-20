@@ -15,6 +15,21 @@ export const metadata: Metadata = {
       "Honest travel guides for planning, destinations, and trip tips.",
     url: "/guides",
     type: "website",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: `${SITE_NAME} — Travel guides, tips, and planning advice`,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `Travel Guides | ${SITE_NAME}`,
+    description:
+      "Honest travel guides for planning, destinations, and trip tips.",
+    images: ["/opengraph-image"],
   },
 };
 

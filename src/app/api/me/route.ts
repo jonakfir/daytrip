@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db-client";
 import { getServerAuth } from "@/lib/check-auth";
 import { resolveUserIdForAuth } from "@/lib/auth-helpers";
 import { ensureSchema, isDbConfigured } from "@/lib/db";

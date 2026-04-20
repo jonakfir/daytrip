@@ -53,7 +53,7 @@ export type Destination = {
   gradient: [string, string]; // hero gradient (tailwind-friendly)
 };
 
-export const TRIP_LENGTHS = [2, 3, 5, 7] as const;
+export const TRIP_LENGTHS = [2, 3, 4, 5, 7, 10] as const;
 export type TripLength = (typeof TRIP_LENGTHS)[number];
 
 export const DESTINATIONS: Destination[] = [

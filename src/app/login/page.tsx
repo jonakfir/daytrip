@@ -53,24 +53,39 @@ export default function LoginPage() {
           <Link
             href="/"
             className="inline-block font-serif text-display text-charcoal-900"
+            aria-label="Daytrip home"
           >
             Daytrip
           </Link>
-          <p className="mt-2 font-sans text-body-sm text-charcoal-800/50">
+          <h1 className="mt-2 font-serif text-heading-lg text-charcoal-900">
+            Log in
+          </h1>
+          <p className="mt-1 font-sans text-body-sm text-charcoal-800/50">
             Welcome back
           </p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-card p-8">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            method="post"
+            action="/api/auth/login"
+            className="space-y-4"
+          >
             <div>
-              <label className="block text-caption font-sans font-medium text-charcoal-800 mb-2">
+              <label
+                htmlFor="login-email"
+                className="block text-caption font-sans font-medium text-charcoal-800 mb-2"
+              >
                 Email
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30" />
                 <input
+                  id="login-email"
+                  name="email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -81,13 +96,19 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-caption font-sans font-medium text-charcoal-800 mb-2">
+              <label
+                htmlFor="login-password"
+                className="block text-caption font-sans font-medium text-charcoal-800 mb-2"
+              >
                 Password
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-800/30" />
                 <input
+                  id="login-password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password"
@@ -97,6 +118,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal-800/40 hover:text-charcoal-800"
                 >
                   {showPassword ? (

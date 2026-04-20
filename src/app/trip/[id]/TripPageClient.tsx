@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronsDown, ChevronsUp } from "lucide-react";
 import type { Activity, Itinerary } from "@/types/itinerary";
 import TripHero from "@/components/trip/TripHero";
 import DaySection from "@/components/trip/DaySection";
 import Sidebar from "@/components/trip/Sidebar";
 import SharePanel from "@/components/trip/SharePanel";
 import ChatPanel from "@/components/trip/ChatPanel";
+import { cityForDay, isMultiCity } from "@/lib/itinerary-helpers";
 
 interface Props {
   itinerary: Itinerary;
@@ -17,6 +19,37 @@ type TimeBlockKey = "morning" | "afternoon" | "evening";
 export default function TripPageClient({ itinerary: initialItinerary }: Props) {
   const [itinerary, setItinerary] = useState<Itinerary>(initialItinerary);
   const [shareOpen, setShareOpen] = useState(false);
+
+  // Per-day expand/collapse state. Seeded expanded for every day so
+  // the trip reads normally on first load. The top-level "Expand all
+  // / Collapse all" button and individual day headers flip entries.
+  const [expandedDays, setExpandedDays] = useState<Set<number>>(() => {
+    const init = new Set<number>();
+    (initialItinerary.days ?? []).forEach((d) => init.add(d.dayNumber));
+    return init;
+  });
+  const toggleDay = useCallback((dayNumber: number) => {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(dayNumber)) next.delete(dayNumber);
+      else next.add(dayNumber);
+      return next;
+    });
+  }, []);
+  const allExpanded = useMemo(() => {
+    const days = itinerary.days ?? [];
+    return days.length > 0 && days.every((d) => expandedDays.has(d.dayNumber));
+  }, [itinerary.days, expandedDays]);
+  const toggleAll = useCallback(() => {
+    const days = itinerary.days ?? [];
+    if (allExpanded) {
+      setExpandedDays(new Set());
+    } else {
+      setExpandedDays(new Set(days.map((d) => d.dayNumber)));
+    }
+  }, [allExpanded, itinerary.days]);
+
+  const showCityLabels = isMultiCity(itinerary);
 
   // Keep sessionStorage in sync so reloads get the updated version
   useEffect(() => {
@@ -93,18 +126,49 @@ export default function TripPageClient({ itinerary: initialItinerary }: Props) {
               </div>
             )}
 
+            {/* Expand / collapse all toggle — only when there's more
+                than one day, otherwise the toggle isn't meaningful. */}
+            {(itinerary.days?.length ?? 0) > 1 && (
+              <div className="mb-6 flex justify-end">
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream-300 text-charcoal-800 font-sans text-body-sm hover:border-terracotta-500 hover:text-terracotta-600 transition-colors"
+                  aria-label={allExpanded ? "Collapse all days" : "Expand all days"}
+                >
+                  {allExpanded ? (
+                    <>
+                      <ChevronsUp className="w-4 h-4" /> Collapse all
+                    </>
+                  ) : (
+                    <>
+                      <ChevronsDown className="w-4 h-4" /> Expand all
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
             {/* Day sections */}
-            {itinerary.days?.map((day, index) => (
-              <DaySection
-                key={`${day.dayNumber}-${day.date}`}
-                day={day}
-                isLast={index === itinerary.days.length - 1}
-                destination={itinerary.destination}
-                onActivityChange={(block, activityIndex, newActivity) =>
-                  handleActivityChange(index, block, activityIndex, newActivity)
-                }
-              />
-            ))}
+            {itinerary.days?.map((day, index) => {
+              const city = showCityLabels
+                ? cityForDay(itinerary, day.dayNumber)
+                : null;
+              return (
+                <DaySection
+                  key={`${day.dayNumber}-${day.date}`}
+                  day={day}
+                  isLast={index === itinerary.days.length - 1}
+                  destination={itinerary.destination}
+                  cityLabel={city}
+                  expanded={expandedDays.has(day.dayNumber)}
+                  onToggle={() => toggleDay(day.dayNumber)}
+                  onActivityChange={(block, activityIndex, newActivity) =>
+                    handleActivityChange(index, block, activityIndex, newActivity)
+                  }
+                />
+              );
+            })}
 
             {/* End of itinerary */}
             <div className="text-center py-16">
@@ -119,6 +183,7 @@ export default function TripPageClient({ itinerary: initialItinerary }: Props) {
             <Sidebar
               flights={itinerary.flights || []}
               hotels={itinerary.hotels || []}
+              hotelsByCity={itinerary.hotelsByCity}
               tours={itinerary.tours || []}
             />
           </div>
@@ -131,6 +196,7 @@ export default function TripPageClient({ itinerary: initialItinerary }: Props) {
         shareUrl={shareUrl}
         destination={itinerary.destination}
         duration={dayCount}
+        itinerary={itinerary}
       />
 
       {/* Floating Claude chat for refining the itinerary */}

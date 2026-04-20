@@ -16,6 +16,21 @@ export default function ContactPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    const trimmedMessage = message.trim();
+    if (!trimmedName || !trimmedEmail || !trimmedMessage) {
+      setError("Please fill in your name, email, and message before sending.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError("That email address doesn't look right — please check and try again.");
+      return;
+    }
+    if (trimmedMessage.length < 5) {
+      setError("Please share a little more detail in your message.");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/contact", {
@@ -32,7 +47,7 @@ export default function ContactPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Couldn't send your message. Please try again or email hello@daytrip.travel."
+          : "Couldn't send your message. Please try again or email hello@daytrip-ai.com."
       );
     } finally {
       setSubmitting(false);
@@ -97,13 +112,25 @@ export default function ContactPage() {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form
+                onSubmit={handleSubmit}
+                method="post"
+                action="/api/contact"
+                className="space-y-4"
+                noValidate
+              >
                 <div>
-                  <label className="block text-caption font-sans font-medium text-charcoal-800 mb-2">
+                  <label
+                    htmlFor="contact-name"
+                    className="block text-caption font-sans font-medium text-charcoal-800 mb-2"
+                  >
                     Name
                   </label>
                   <input
+                    id="contact-name"
+                    name="name"
                     type="text"
+                    autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Your name"
@@ -112,11 +139,17 @@ export default function ContactPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-caption font-sans font-medium text-charcoal-800 mb-2">
+                  <label
+                    htmlFor="contact-email"
+                    className="block text-caption font-sans font-medium text-charcoal-800 mb-2"
+                  >
                     Email
                   </label>
                   <input
+                    id="contact-email"
+                    name="email"
                     type="email"
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
@@ -125,16 +158,22 @@ export default function ContactPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-caption font-sans font-medium text-charcoal-800 mb-2">
+                  <label
+                    htmlFor="contact-message"
+                    className="block text-caption font-sans font-medium text-charcoal-800 mb-2"
+                  >
                     Message
                   </label>
                   <textarea
+                    id="contact-message"
+                    name="message"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder="Tell us what's on your mind..."
                     rows={5}
                     className="w-full px-4 py-3 bg-cream-100 border border-cream-300 rounded-xl font-sans text-body-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500/50 resize-none"
                     required
+                    minLength={5}
                   />
                 </div>
                 {error && (
@@ -181,10 +220,10 @@ export default function ContactPage() {
                     For general questions and support.
                   </p>
                   <a
-                    href="mailto:hello@daytrip.travel"
+                    href="mailto:hello@daytrip-ai.com"
                     className="font-sans text-body-sm font-medium text-terracotta-500 hover:text-terracotta-600"
                   >
-                    hello@daytrip.travel
+                    hello@daytrip-ai.com
                   </a>
                 </div>
               </div>
@@ -203,10 +242,10 @@ export default function ContactPage() {
                     Hotel, tour, or travel brand? Let&apos;s collaborate.
                   </p>
                   <a
-                    href="mailto:partners@daytrip.travel"
+                    href="mailto:partners@daytrip-ai.com"
                     className="font-sans text-body-sm font-medium text-terracotta-500 hover:text-terracotta-600"
                   >
-                    partners@daytrip.travel
+                    partners@daytrip-ai.com
                   </a>
                 </div>
               </div>

@@ -29,12 +29,21 @@ export interface DayPlan {
   tip?: string;
 }
 
+export type HotelTier = "hostel" | "budget" | "mid" | "upscale";
+
 export interface Hotel {
   name: string;
   pricePerNight: string;
   rating: number;
   bookingUrl: string;
   image?: string;
+  /** City this hotel is in. Set when the trip is multi-city so the UI
+   *  can group hotels under the city they serve. Optional for
+   *  back-compat with older flat-list itineraries. */
+  city?: string;
+  /** Price tier. Populated by the per-city hotel step so the UI can
+   *  badge cards ("Hostel" / "Budget" / "Mid" / "Upscale"). */
+  tier?: HotelTier;
 }
 
 export interface Flight {
@@ -67,6 +76,20 @@ export interface Itinerary {
   budget: string;
   days: DayPlan[];
   hotels: Hotel[];
+  /** Hotels grouped by city for multi-city trips. When present the
+   *  UI renders each city's 4 tiers (hostel / budget / mid / upscale).
+   *  The flat `hotels` array is still populated (union of all cities)
+   *  for back-compat with callers that don't know about grouping. */
+  hotelsByCity?: Record<string, Hotel[]>;
+  /** City-by-day plan from the generator. Lets the trip page render
+   *  a "Prague · Czech Republic" subheader on each day of a
+   *  multi-city trip, and lets PDF/DOCX export group by city. */
+  cityPlan?: Array<{
+    city: string;
+    country: string;
+    startDay: number;
+    endDay: number;
+  }>;
   flights: Flight[];
   tours: ViatorTour[];
   tips: string[];

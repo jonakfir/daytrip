@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Link2, Check, MapPin, Calendar } from "lucide-react";
+import { X, Link2, Check, MapPin, Calendar, FileText, FileDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { nativeShare } from "@/lib/capacitor";
+import type { Itinerary } from "@/types/itinerary";
 
 interface SharePanelProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ interface SharePanelProps {
   shareUrl: string;
   destination: string;
   duration: number;
+  /** Full itinerary object. Needed for client-side PDF generation. */
+  itinerary?: Itinerary;
 }
 
 export default function SharePanel({
@@ -19,8 +22,10 @@ export default function SharePanel({
   shareUrl,
   destination,
   duration,
+  itinerary,
 }: SharePanelProps) {
   const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -71,6 +76,49 @@ export default function SharePanel({
     );
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
+
+  const exportPdf = useCallback(async () => {
+    if (!itinerary) return;
+    setExporting("pdf");
+    try {
+      // Lazy-load @react-pdf/renderer so the PDF engine (which is ~350kB
+      // gzipped) isn't in the main bundle for every trip page visitor.
+      const [{ pdf }, { ItineraryPdfDoc }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("@/components/trip/ItineraryPdfDoc"),
+      ]);
+      const blob = await pdf(
+        <ItineraryPdfDoc itinerary={itinerary} />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${destination.replace(/[^a-zA-Z0-9]+/g, "-")}-itinerary.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      alert("Couldn't generate the PDF. Please try again.");
+    } finally {
+      setExporting(null);
+    }
+  }, [itinerary, destination]);
+
+  const exportDocx = useCallback(() => {
+    if (!itinerary?.shareId) return;
+    setExporting("docx");
+    // The DOCX is server-generated — let the browser handle download.
+    const link = document.createElement("a");
+    link.href = `/api/export/doc/${itinerary.shareId}`;
+    link.download = `${destination.replace(/[^a-zA-Z0-9]+/g, "-")}-itinerary.docx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    // Reset the button state shortly after — the download is async.
+    setTimeout(() => setExporting(null), 1500);
+  }, [itinerary, destination]);
 
   if (!isOpen) return null;
 
@@ -138,6 +186,30 @@ export default function SharePanel({
             )}
           </button>
         </div>
+
+        {/* Export Buttons */}
+        {itinerary && (
+          <div className="flex gap-3 mb-3">
+            <button
+              onClick={exportPdf}
+              disabled={exporting !== null}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white border border-cream-300 text-charcoal-900 font-sans text-body-sm font-medium hover:border-terracotta-500 hover:text-terracotta-600 transition-colors disabled:opacity-60"
+              aria-label="Export trip as PDF"
+            >
+              <FileText className="w-4 h-4" />
+              {exporting === "pdf" ? "Building PDF…" : "Export PDF"}
+            </button>
+            <button
+              onClick={exportDocx}
+              disabled={exporting !== null}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white border border-cream-300 text-charcoal-900 font-sans text-body-sm font-medium hover:border-terracotta-500 hover:text-terracotta-600 transition-colors disabled:opacity-60"
+              aria-label="Export trip as Word DOCX"
+            >
+              <FileDown className="w-4 h-4" />
+              {exporting === "docx" ? "Downloading…" : "Export DOCX"}
+            </button>
+          </div>
+        )}
 
         {/* Social Buttons */}
         <div className="flex gap-3">

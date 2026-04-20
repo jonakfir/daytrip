@@ -19,6 +19,21 @@ export const metadata: Metadata = {
       "Browse the world's best cities and generate a personalized AI itinerary for any of them.",
     url: "/destinations",
     type: "website",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: `${SITE_NAME} — AI travel itineraries for every destination`,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `Destinations | ${SITE_NAME}`,
+    description:
+      "Browse the world's best cities and generate a personalized AI itinerary for any of them.",
+    images: ["/opengraph-image"],
   },
 };
 
@@ -151,10 +166,18 @@ export default function DestinationsIndexPage() {
         })}
       </section>
 
-      <footer className="bg-charcoal-900 text-cream-200/60 py-10 text-center font-sans text-body-sm">
-        <p>
-          &copy; {new Date().getFullYear()} Daytrip. AI travel itineraries for {DESTINATIONS.length}+ destinations worldwide.
-        </p>
+      <footer className="bg-charcoal-900 text-cream-200/60 py-10 font-sans text-body-sm">
+        <div className="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row sm:justify-between items-center gap-4">
+          <p className="text-center sm:text-left">
+            &copy; {new Date().getFullYear()} Daytrip. AI travel itineraries for {DESTINATIONS.length}+ destinations worldwide.
+          </p>
+          <nav className="flex gap-6">
+            <Link href="/about" className="hover:text-cream-100">About</Link>
+            <Link href="/contact" className="hover:text-cream-100">Contact</Link>
+            <Link href="/privacy" className="hover:text-cream-100">Privacy</Link>
+            <Link href="/terms" className="hover:text-cream-100">Terms</Link>
+          </nav>
+        </div>
       </footer>
     </main>
   );
