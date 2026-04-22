@@ -28,12 +28,15 @@
     "jose": "^6.2.2",
     "jsonrepair": "^3.14.0",
     "lucide-react": "^0.468.0",
+    "maplibre-gl": "^4.7.1",
     "next": "14.2.21",
     "pg": "^8.20.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-map-gl": "^7.1.9",
     "stripe": "^22.0.1",
-    "three": "^0.171.0"
+    "three": "^0.171.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",
