@@ -18,8 +18,8 @@ Scoped to Jonathan's version of Ben's idea — we are **not** building a cross-p
 | D3 | Geocoding | **Google Places API** (Text Search + Place Details) | Best POI recall for ambiguous names ("Trevi", "Old Town"). Already a Google-adjacent stack. |
 | D4 | Media storage | **New `trip_media` sidecar table** (not in `itinerary_data` jsonb) | Keeps the generation blob clean; clips can be added/removed without rewriting the whole itinerary; natural place for thumbnails + embed HTML. |
 | D5 | Coordinates | **Add `latitude`/`longitude` inside existing jsonb Activity shape**, backfill lazily on first map render | Minimizes schema churn. Jsonb is already the source of truth for activities. |
-| D6 | Ingestion scope | **TikTok + Instagram Reels only for v1** | YouTube Shorts later; IG public posts only (business account for richer geotag later). |
-| D7 | oEmbed provider | **Official oEmbed endpoints** (`www.tiktok.com/oembed`, `graph.facebook.com/v19.0/instagram_oembed`) | IG requires a Facebook App token — ship TikTok day 1, IG day 7 after token provisioned. |
+| D6 | Ingestion scope | **TikTok only for v1; Instagram deferred** | IG oEmbed requires a Meta Business app + oEmbed Read permission — provisioning skipped in Phase 0 (2026-04-22). Add IG in a later phase when there's appetite for the Meta maze. YouTube Shorts even later. |
+| D7 | oEmbed provider | **Official oEmbed** (`www.tiktok.com/oembed` — no auth required) | Phase 2 ships TikTok-only. IG codepath stays behind an `IG_OEMBED_TOKEN` presence check and 503s with a clear message if called without it. |
 | D8 | Mutation model | **Itineraries become mutable after generation** for clip-adds and stop-adds | Current code treats them as immutable. We need a `PATCH /api/trips/[id]` that accepts `{type:'add_clip'\|'add_activity'\|'move_stop', ...}`. Server validates, writes jsonb + trip_media, bumps `updated_at`. |
 | D9 | Share extension scope | **iOS first (Capacitor + native Swift extension). Android deferred.** | iOS is where Ben described the behavior; Android share is a separate native target we can add later. |
 
