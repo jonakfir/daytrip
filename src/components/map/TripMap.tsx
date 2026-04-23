@@ -100,6 +100,11 @@ export function TripMap({ itinerary, media, focusDay, className }: TripMapProps)
   const markersRef = useRef<Array<{ remove: () => void }>>([]);
   const [selected, setSelected] = useState<Pin | null>(null);
   const [activeDay, setActiveDay] = useState<number | null>(focusDay ?? null);
+  // Flip to true once MapLibre's dynamic import + container mount completes.
+  // The marker-drawing effect depends on this so it doesn't short-circuit
+  // on first render (when mapRef.current is still null but visiblePins
+  // already populated from the itinerary prop).
+  const [mapReady, setMapReady] = useState(false);
 
   const allPins = useMemo(() => collectPins(itinerary, media), [itinerary, media]);
   const visiblePins = useMemo(
@@ -128,17 +133,25 @@ export function TripMap({ itinerary, media, focusDay, className }: TripMapProps)
       });
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
       mapRef.current = map as unknown as Map;
+      // Wait for the tile style to finish loading — adding markers before
+      // this moment still works visually, but fitBounds gets clobbered by
+      // the map's initial viewport animation.
+      (map as unknown as { once: (e: string, h: () => void) => void }).once(
+        "load",
+        () => setMapReady(true)
+      );
     })();
     return () => {
       cancelled = true;
       mapRef.current?.remove();
       mapRef.current = null;
+      setMapReady(false);
     };
   }, []);
 
-  // Redraw markers whenever visible pins change.
+  // Redraw markers whenever visible pins change or the map finishes booting.
   useEffect(() => {
-    if (!mapRef.current || typeof window === "undefined") return;
+    if (!mapReady || !mapRef.current || typeof window === "undefined") return;
     let cancelled = false;
     (async () => {
       const { default: maplibregl } = await import("maplibre-gl");
@@ -191,7 +204,7 @@ export function TripMap({ itinerary, media, focusDay, className }: TripMapProps)
     return () => {
       cancelled = true;
     };
-  }, [visiblePins]);
+  }, [visiblePins, mapReady]);
 
   const days = itinerary.days.map((d) => d.dayNumber);
   const unresolvedCount = [...itinerary.days.flatMap((d) => [...d.morning, ...d.afternoon, ...d.evening])].filter(

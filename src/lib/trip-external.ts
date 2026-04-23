@@ -174,7 +174,28 @@ export async function finalizeItinerary(itinerary: Itinerary): Promise<void> {
           travelers: itinerary.travelers,
         }),
     }));
-    const enriched: Itinerary = { ...itinerary, hotels: hotelsWithUrls };
+    let enriched: Itinerary = { ...itinerary, hotels: hotelsWithUrls };
+
+    // Run coord backfill synchronously so the very first public viewer of a
+    // shared trip (including the owner in an incognito window) sees pins
+    // on the map. Results are cached in place_cache for 90 days, so the
+    // incremental cost is only the first time a particular POI string
+    // appears across any trip. Fail-soft: if the backfill throws we still
+    // insert the itinerary without coords — the map falls back to the
+    // owner-triggered backfill path.
+    try {
+      // Lazy import so trip-external.ts stays usable in tests that don't
+      // touch the geocode layer.
+      const { backfillItineraryCoords } = await import("@/lib/geo/backfill");
+      const { itinerary: withCoords } = await backfillItineraryCoords(enriched);
+      enriched = withCoords;
+    } catch (err) {
+      console.warn(
+        "[finalizeItinerary] coord backfill skipped:",
+        err instanceof Error ? err.message : err
+      );
+    }
+
     await sql`
       INSERT INTO itineraries (
         id, share_id, destination, start_date, end_date, travelers,
