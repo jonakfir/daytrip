@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Karla } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
+import DeepLinkBridge from "@/components/DeepLinkBridge";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL, TWITTER_HANDLE } from "@/lib/seo";
 import { jsonLdString, organizationSchema, websiteSchema } from "@/lib/schema";
 import "./globals.css";
@@ -109,7 +110,10 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <DeepLinkBridge />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
