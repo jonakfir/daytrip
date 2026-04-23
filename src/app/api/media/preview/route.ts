@@ -18,6 +18,7 @@ import { extractPlaceCandidates, PlaceCandidate } from "@/lib/social/extract-pla
 import { geocode, GeocodeResult } from "@/lib/geo/geocode";
 import { findItineraryForUser } from "@/lib/social/itinerary-lookup";
 import { socialClipsEnabled } from "@/lib/feature-flags";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -37,6 +38,17 @@ export async function POST(req: NextRequest) {
   const auth = await getServerAuth();
   if (!auth.authenticated || !auth.userId) {
     return NextResponse.json({ error: "auth_required" }, { status: 401 });
+  }
+
+  // Rate limit oEmbed calls per user so a misbehaving client can't pound
+  // TikTok / Meta / Google Places. 30 req/min is comfortable for a human
+  // clicking "Preview" — a bot hammering it gets soft-capped.
+  const rl = rateLimit(`media-preview:${auth.userId}`, 30, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate_limited", retryAfterMs: rl.resetMs },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } }
+    );
   }
 
   let body: z.infer<typeof Body>;
