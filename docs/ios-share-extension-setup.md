@@ -1,94 +1,89 @@
-# iOS Share Extension — manual Xcode setup
+# iOS Share Extension — setup
 
-The Swift source files live in `mobile/ios/App/ShareExtension/`. Swift code
-can't be fully automated into an Xcode project — you need to add the target
-yourself once, then everything after that is `npx cap sync ios` and rebuilds.
+The Xcode target, build phases, entitlements, file references, and
+Embed-App-Extensions wiring are all automated by
+[`scripts/ios-add-share-extension.rb`](../scripts/ios-add-share-extension.rb). It's already been run
+once during the Phase 5 commit. Re-run it any time by doing:
 
-Budget: ~20 minutes the first time.
+```bash
+gem install --user-install xcodeproj     # one-time
+ruby scripts/ios-add-share-extension.rb  # idempotent; safe to re-run
+```
+
+The script also writes `mobile/ios/App/App/App.entitlements` and
+`mobile/ios/App/ShareExtension/ShareExtension.entitlements`, each with
+the `group.com.daytrip.shared` App Group claim.
+
+After the script runs the project builds structurally (`xcodebuild -list`
+shows both `App` and `ShareExtension` schemes). **Signing** is the only
+remaining step — and it requires you in Xcode because it touches your
+Apple ID.
 
 ---
 
-## 1. Install `@capacitor/app` (if not already)
+## Manual step: signing
 
-The DeepLinkBridge uses Capacitor's App plugin for `appUrlOpen` events.
+1. `npm install` inside `mobile/` (pulls `@capacitor/app` into the right
+   node_modules so Xcode SPM resolution works).
+2. Open the project:
 
-```bash
-npm install @capacitor/app
-npx cap sync ios
-```
+   ```bash
+   open mobile/ios/App/App.xcodeproj
+   ```
 
-## 2. Open the Xcode workspace
+3. In the left sidebar, click the **App** project, then in the middle pane:
+   - Select the **App** target → **Signing & Capabilities** tab.
+   - Set your **Team** (your Apple Developer account).
+   - Confirm **App Groups** shows `group.com.daytrip.shared` (already
+     wired via entitlements — you may need to click the refresh arrow
+     next to it if Xcode didn't auto-pick it up).
+4. Repeat for the **ShareExtension** target — same Team, same App Group.
+5. Xcode will offer to register the App Group with Apple on your
+   behalf on first build. Accept.
 
-```bash
-open mobile/ios/App/App.xcworkspace
-```
+## Run
 
-## 3. Add a Share Extension target
+Plug in a device (the iOS Simulator doesn't show third-party share
+extensions by default, so device is the real test) and hit Run. The
+share-sheet test:
 
-1. File → New → Target → **Share Extension**.
-2. Name: `ShareExtension`. Language: **Swift**. Click Finish.
-3. When prompted "Activate the ShareExtension scheme?" → **Don't activate** (we still want to run the main app).
+1. Safari → share → "Daytrip" → should launch the app on the AddClipDialog
+   with the URL pre-filled.
+2. TikTok → share → "Daytrip" → same.
+3. Instagram → share a reel → same.
 
-Xcode creates `mobile/ios/App/ShareExtension/` with a default
-`ShareViewController.swift`, `Info.plist`, and `MainInterface.storyboard`.
+If "Daytrip" doesn't appear in the share sheet, tap **More** at the end
+of the row and toggle it on.
 
-## 4. Replace the generated files with ours
+---
 
-From a terminal at the repo root:
+## What the script did (for reference)
 
-```bash
-# The files we committed overwrite Xcode's generated stubs.
-cp mobile/ios/App/ShareExtension/ShareViewController.swift \
-   mobile/ios/App/ShareExtension/ShareViewController.swift.ours
-# (After cp, re-drag the *.ours file back into Xcode's project navigator
-# if Xcode doesn't pick it up automatically. Easier: delete the stub in
-# Xcode, then re-add with "Add files to App…")
-```
+1. Created a `ShareExtension` app-extension target (product type
+   `com.apple.product-type.app-extension`).
+2. Linked the existing on-disk files to the target:
+   - `mobile/ios/App/ShareExtension/ShareViewController.swift` → Sources
+   - `mobile/ios/App/ShareExtension/MainInterface.storyboard` → Resources
+   - `mobile/ios/App/ShareExtension/Info.plist` → INFOPLIST_FILE setting
+3. Added `UIKit`, `Social`, and `UniformTypeIdentifiers` to the extension's
+   Frameworks build phase.
+4. Added an **Embed App Extensions** (`PBXCopyFilesBuildPhase` with
+   `dstSubfolderSpec = plug_ins`) build phase on the main App target,
+   referencing the extension's `.appex` product.
+5. Made the App target depend on the ShareExtension target so it builds
+   first.
+6. Wrote `App.entitlements` and `ShareExtension.entitlements` with the
+   `com.apple.security.application-groups` claim, wired via
+   `CODE_SIGN_ENTITLEMENTS` build setting on both targets.
 
-Easier Xcode-native workflow:
+## What it didn't touch
 
-- Delete the stub `ShareViewController.swift`, `Info.plist`, and `MainInterface.storyboard` that Xcode created for the target.
-- Drag the files from `mobile/ios/App/ShareExtension/` (Finder) into the ShareExtension group in Xcode. Check "Copy items if needed: **OFF**" and "Add to target: **ShareExtension**".
+- Signing team (must be your Apple ID).
+- Apple Developer portal App Group registration (Xcode handles on first
+  build, after you set the team).
+- Running or distributing the build.
 
-## 5. App Group (for the belt-and-suspenders stash)
+## Android
 
-Both targets (main App + ShareExtension) need an App Group so the extension
-can stash the pending URL in shared `UserDefaults`.
-
-1. Select the main **App** target → **Signing & Capabilities** → "+ Capability" → **App Groups**.
-2. Add a group: `group.com.daytrip.shared`.
-3. Repeat for the **ShareExtension** target. Check the same `group.com.daytrip.shared` box.
-
-(Both apps must sign into the same Apple developer team for App Groups to work.)
-
-## 6. URL scheme registration — already done
-
-`mobile/ios/App/App/Info.plist` already declares `CFBundleURLSchemes = ["daytrip"]`. No action needed.
-
-## 7. Build settings for the ShareExtension target
-
-- **Deployment target:** match the main app (iOS 15+ recommended — we use Swift concurrency).
-- **iOS Deployment Target → 15.0** (or later).
-
-## 8. Run
-
-1. Pick **App** scheme in Xcode → run on device or simulator.
-2. In Safari / TikTok / Instagram, share a URL → "Daytrip" should appear in the share sheet.
-3. Tap it. The app opens on whatever page you were on and pops the **Add clip** dialog with the URL pre-filled.
-
-If the share sheet doesn't show "Daytrip":
-- Enable it via the "More" option at the end of the share row → toggle "Daytrip" on.
-- Confirm the ShareExtension target's **Activation Rule** matches (it should, we pre-set it).
-
-## 9. QA checklist
-
-- [ ] Share a TikTok URL from the TikTok app → Daytrip opens on AddClipDialog with URL.
-- [ ] Share an Instagram reel URL → same behaviour.
-- [ ] Share a non-TikTok/IG URL (e.g., a YouTube link) → extension opens the app but the AddClipDialog rejects with "unsupported platform". (Expected until Phase 7.)
-- [ ] Cold start: kill the app, then share from TikTok → app launches and the dialog opens. This validates the localStorage-fallback path.
-- [ ] User not logged in: share → lands on login → after login, pending URL replays.
-
-## Future: Android share target
-
-Deferred per the feature plan. Android uses `Intent` filters in
-`AndroidManifest.xml` — a separate short doc when we get there.
+Deferred. Android's share flow uses `Intent` filters in
+`AndroidManifest.xml` — a separate short doc when we add that platform.
