@@ -8,8 +8,15 @@
  * Why MapLibre (not Mapbox)? MIT-licensed, works with MapTiler's free tier,
  * and ships its own TS types. Client-side only — imports `maplibre-gl`
  * dynamically because it touches `window` on load.
+ *
+ * NOTE: maplibre-gl.css MUST be a static import (not dynamic) so Next.js
+ * bundles it as a stylesheet. Dynamic imports of CSS files inside async
+ * functions are silently dropped by the Next compiler, which leaves the
+ * canvas rendering without label z-index / opacity rules — the tile data
+ * loads fine but the map visually renders as flat fill colors.
  */
 
+import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Itinerary, TripMedia, Activity, Hotel } from "@/types/itinerary";
 import { colorForDay } from "@/lib/map/day-colors";
@@ -117,7 +124,7 @@ export function TripMap({ itinerary, media, focusDay, className }: TripMapProps)
     if (!containerRef.current) return;
     let cancelled = false;
     (async () => {
-      const [{ default: maplibregl }] = await Promise.all([import("maplibre-gl"), import("maplibre-gl/dist/maplibre-gl.css")]);
+      const { default: maplibregl } = await import("maplibre-gl");
       if (cancelled || !containerRef.current) return;
       const key = process.env.NEXT_PUBLIC_MAPTILER_KEY;
       if (!key) {
