@@ -1,3 +1,16 @@
+/** Confidence bucket for a geocoded coordinate. `unresolved` means we
+ *  tried to geocode and failed — store the row, skip the pin. */
+export type GeocodeConfidence = "high" | "medium" | "low" | "manual" | "unresolved";
+
+export interface ActivityCoords {
+  lat: number;
+  lng: number;
+  /** Google Places place_id when the coord came from Places API — lets us
+   *  re-fetch for fresh details (hours, photos) without re-searching. */
+  placeId?: string;
+  confidence: GeocodeConfidence;
+}
+
 export interface Activity {
   time: string;
   name: string;
@@ -17,6 +30,36 @@ export interface Activity {
   rating?: number;
   reviewCount?: number;
   alternatives?: Activity[];
+  /** Lazily populated — activities generated before the map feature
+   *  have no coords; the map view backfills them via Places and writes
+   *  the result back into itinerary_data so the geocode only runs once. */
+  coords?: ActivityCoords;
+}
+
+export type MediaPlatform = "tiktok" | "instagram" | "youtube_shorts";
+export type TripSlot = "morning" | "afternoon" | "evening";
+
+/** A saved social clip attached to a trip. Mirrors the trip_media table
+ *  row; the server converts snake_case DB columns to camelCase for the
+ *  client. Clips live beside the itinerary jsonb rather than inside it
+ *  so add/remove doesn't rewrite the whole blob. */
+export interface TripMedia {
+  id: string;
+  platform: MediaPlatform;
+  sourceUrl: string;
+  providerVideoId?: string;
+  embedHtml: string;
+  thumbnailUrl?: string;
+  authorName?: string;
+  title?: string;
+  /** 1-indexed day number. `null` = unassigned (saved from the share
+   *  extension before the user picks a day). */
+  dayNumber: number | null;
+  slot: TripSlot | null;
+  position: number;
+  coords?: ActivityCoords;
+  placeName?: string;
+  createdAt: string;
 }
 
 export interface DayPlan {
