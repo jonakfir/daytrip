@@ -21,25 +21,29 @@ Apple ID.
 
 ---
 
-## Manual step: signing
+## Manual steps left
 
-1. `npm install` inside `mobile/` (pulls `@capacitor/app` into the right
-   node_modules so Xcode SPM resolution works).
-2. Open the project:
+Team `3K8N98ZS5T` (Jonathan Kfir) is already preset on all 4 build configs
+by the script. Signing & Capabilities is configured via entitlements files.
+What's left:
 
-   ```bash
-   open mobile/ios/App/App.xcodeproj
-   ```
+1. **Install the iOS platform SDK in Xcode** if it got cleaned out.
+   Xcode → Settings → Platforms → install the latest iOS (~10 GB).
+   Check you have simulator runtimes too while you're there.
+2. `npm install` inside `mobile/` (ensures `@capacitor/app` is resolvable
+   by Xcode's SPM resolver — already done in commit 2cf87e7, re-run after
+   `npx cap sync ios`).
+3. `open mobile/ios/App/App.xcodeproj`.
+4. Hit **Run** (Cmd+R) on a physical device. Xcode will prompt once to
+   register the App Group `group.com.daytrip.shared` with your Apple
+   Developer account — accept.
 
-3. In the left sidebar, click the **App** project, then in the middle pane:
-   - Select the **App** target → **Signing & Capabilities** tab.
-   - Set your **Team** (your Apple Developer account).
-   - Confirm **App Groups** shows `group.com.daytrip.shared` (already
-     wired via entitlements — you may need to click the refresh arrow
-     next to it if Xcode didn't auto-pick it up).
-4. Repeat for the **ShareExtension** target — same Team, same App Group.
-5. Xcode will offer to register the App Group with Apple on your
-   behalf on first build. Accept.
+If you're on a different Apple account than Jonathan's, override the
+team before re-running the script:
+
+```bash
+DAYTRIP_TEAM_ID=YOUR10CHARID ruby scripts/ios-add-share-extension.rb
+```
 
 ## Run
 

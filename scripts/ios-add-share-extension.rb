@@ -29,6 +29,9 @@ APP_DIR         = File.join(APP_ROOT, "App")
 APP_GROUP_ID    = "group.com.daytrip.shared"
 EXT_BUNDLE_ID   = "com.daytrip.app.share"
 DEPLOYMENT      = "15.0"
+# Pulled from the App target's existing DEVELOPMENT_TEAM. Override via
+# DAYTRIP_TEAM_ID=XXX when running if you're on a different Apple account.
+TEAM_ID         = ENV["DAYTRIP_TEAM_ID"] || "3K8N98ZS5T"
 
 abort "Project not found: #{PROJECT_PATH}" unless File.exist?(PROJECT_PATH)
 abort "Extension sources not found: #{EXT_DIR}" unless Dir.exist?(EXT_DIR)
@@ -79,8 +82,7 @@ if ext_target.nil?
     settings["LD_RUNPATH_SEARCH_PATHS"]          = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
     settings["SKIP_INSTALL"]                     = "YES"
     settings["CODE_SIGN_STYLE"]                  = "Automatic"
-    # Don't lock a team id here — the user sets it once in Xcode and it
-    # propagates to both targets via the project-level setting.
+    settings["DEVELOPMENT_TEAM"]                 = TEAM_ID
   end
 else
   puts "ShareExtension target already exists — syncing files only."
@@ -136,6 +138,13 @@ end
 
 app_target.build_configuration_list.build_configurations.each do |config|
   config.build_settings["CODE_SIGN_ENTITLEMENTS"] = "App/App.entitlements"
+  # Only set the team if it's absent — don't overwrite an existing value.
+  config.build_settings["DEVELOPMENT_TEAM"] ||= TEAM_ID
+end
+
+# Also set team on every ShareExtension config (re-runs need this).
+ext_target.build_configuration_list.build_configurations.each do |config|
+  config.build_settings["DEVELOPMENT_TEAM"] = TEAM_ID
 end
 
 # Embed App Extensions: PBXCopyFilesBuildPhase with dstSubfolderSpec = 13 (plugins)
@@ -167,8 +176,6 @@ puts "saved #{PROJECT_PATH}"
 
 puts ""
 puts "Done. Still needed (Xcode GUI):"
-puts "  1. Open #{APP_ROOT}/App.xcworkspace"
-puts "  2. Select App target > Signing & Capabilities > set your Team"
-puts "  3. Select ShareExtension target > Signing & Capabilities > set the same Team"
-puts "  4. First build may prompt Apple to register the App Group \"#{APP_GROUP_ID}\""
-puts "  5. Run on a device or simulator."
+puts "  1. Open #{APP_ROOT}/App.xcodeproj"
+puts "  2. Xcode may prompt to register App Group \"#{APP_GROUP_ID}\" — accept."
+puts "  3. Run on a device or simulator. Team (#{TEAM_ID}) is preset on all configs."
