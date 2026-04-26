@@ -38,3 +38,13 @@ next-env.d.ts
 /playwright-report
 /blob-report
 /playwright/.cache
+
+# Mobile (Capacitor)
+mobile/node_modules
+mobile/www
+mobile/ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
+mobile/ios/App/App.xcodeproj/project.xcworkspace/
+
+# Env files (any nesting)
+.env
+**/.env

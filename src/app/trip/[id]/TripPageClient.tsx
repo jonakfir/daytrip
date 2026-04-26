@@ -8,6 +8,7 @@ import DaySection from "@/components/trip/DaySection";
 import Sidebar from "@/components/trip/Sidebar";
 import SharePanel from "@/components/trip/SharePanel";
 import ChatPanel from "@/components/trip/ChatPanel";
+import { ClipsToolbar } from "@/components/trip/ClipsToolbar";
 import { cityForDay, isMultiCity } from "@/lib/itinerary-helpers";
 
 interface Props {
@@ -125,6 +126,10 @@ export default function TripPageClient({ itinerary: initialItinerary }: Props) {
                 </ul>
               </div>
             )}
+
+            {/* Social clips toolbar: "+ Add clip" + "View full map".
+                Hidden when SOCIAL_CLIPS_ENABLED is off. */}
+            <ClipsToolbar itinerary={itinerary} />
 
             {/* Expand / collapse all toggle — only when there's more
                 than one day, otherwise the toggle isn't meaningful. */}

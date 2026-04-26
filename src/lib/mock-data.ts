@@ -27,6 +27,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "10:00",
           name: "Arrive at Narita International Airport",
+          coords: { lat: 35.7653, lng: 140.3856, confidence: "high" },
           category: "transport",
           description:
             "Clear customs and pick up your Suica IC card at the JR counter for seamless transit across Tokyo. Take the Narita Express to Shibuya Station.",
@@ -44,6 +45,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "13:00",
           name: "Ichiran Ramen Shibuya",
+          coords: { lat: 35.6587, lng: 139.7007, confidence: "high" },
           category: "food",
           description:
             "Start your Tokyo food journey with a bowl of rich tonkotsu ramen at Ichiran's famous solo-booth dining experience.",
@@ -79,6 +81,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "14:00",
           name: "Shibuya Crossing & Hachiko Statue",
+          coords: { lat: 35.6595, lng: 139.7004, confidence: "high" },
           category: "culture",
           description:
             "Experience the world's busiest pedestrian crossing from Shibuya Sky observation deck.",
@@ -91,6 +94,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "15:30",
           name: "Meiji Jingu Shrine",
+          coords: { lat: 35.6764, lng: 139.6993, confidence: "high" },
           category: "culture",
           description:
             "Walk through the towering torii gate into the forested grounds of this Shinto shrine dedicated to Emperor Meiji.",
@@ -105,6 +109,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "18:00",
           name: "Takeshita Street, Harajuku",
+          coords: { lat: 35.6702, lng: 139.7030, confidence: "high" },
           category: "shopping",
           description:
             "Browse quirky fashion boutiques and pick up a rainbow cotton candy crepe.",
@@ -115,6 +120,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "19:30",
           name: "Gonpachi Nishi-Azabu",
+          coords: { lat: 35.6593, lng: 139.7258, confidence: "high" },
           category: "food",
           description:
             "Dine at the restaurant that inspired the famous scene in Kill Bill.",
@@ -137,6 +143,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "07:00",
           name: "Tsukiji Outer Market",
+          coords: { lat: 35.6654, lng: 139.7706, confidence: "high" },
           category: "food",
           description:
             "Arrive early to explore the bustling outer market stalls. Try tamagoyaki and fresh uni on rice.",
@@ -148,6 +155,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "09:30",
           name: "Senso-ji Temple, Asakusa",
+          coords: { lat: 35.7148, lng: 139.7967, confidence: "high" },
           category: "culture",
           description:
             "Visit Tokyo's oldest Buddhist temple through the iconic Kaminarimon Thunder Gate.",
@@ -162,6 +170,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "13:00",
           name: "teamLab Borderless, Odaiba",
+          coords: { lat: 35.6264, lng: 139.7810, confidence: "high" },
           category: "entertainment",
           description:
             "Immerse yourself in a world of interactive digital art across a massive 10,000-square-meter space.",
@@ -174,6 +183,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "16:00",
           name: "Odaiba Seaside Park",
+          coords: { lat: 35.6298, lng: 139.7746, confidence: "high" },
           category: "nature",
           description:
             "Stroll along the waterfront promenade with views of Rainbow Bridge.",
@@ -188,6 +198,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "19:00",
           name: "Shinjuku Golden Gai",
+          coords: { lat: 35.6938, lng: 139.7038, confidence: "high" },
           category: "entertainment",
           description:
             "Explore the labyrinthine alleys of Shinjuku's Golden Gai, home to over 200 tiny bars.",
@@ -214,6 +225,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "09:15",
           name: "Kotoku-in (Great Buddha)",
+          coords: { lat: 35.3167, lng: 139.5361, confidence: "high" },
           category: "culture",
           description:
             "Stand before the 13-meter-tall bronze Amida Buddha, one of Japan's most iconic landmarks.",
@@ -227,6 +239,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "12:00",
           name: "Komachi-dori Street Lunch",
+          coords: { lat: 35.3190, lng: 139.5530, confidence: "high" },
           category: "food",
           description:
             "Browse the charming pedestrian street lined with cafes and street food vendors.",
@@ -238,6 +251,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "14:30",
           name: "Hase-dera Temple",
+          coords: { lat: 35.3169, lng: 139.5311, confidence: "high" },
           category: "culture",
           description:
             "Hillside temple with a 9-meter gilded Kannon statue and panoramic ocean views.",
@@ -250,6 +264,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "18:00",
           name: "Return to Tokyo & dinner in Shibuya",
+          coords: { lat: 35.6594, lng: 139.7005, confidence: "high" },
           category: "food",
           description:
             "Head back to Tokyo and enjoy izakaya hopping in Shibuya backstreets.",
@@ -269,6 +284,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "09:00",
           name: "Shinjuku Gyoen National Garden",
+          coords: { lat: 35.6852, lng: 139.7100, confidence: "high" },
           category: "nature",
           description:
             "Wander through one of Tokyo's most beautiful parks featuring Japanese, English, and French gardens.",
@@ -282,6 +298,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "12:30",
           name: "Ginza Lunch at Kyubey",
+          coords: { lat: 35.6712, lng: 139.7634, confidence: "high" },
           category: "food",
           description:
             "Treat yourself to an omakase sushi experience at this legendary Ginza sushi counter.",
@@ -294,6 +311,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "14:30",
           name: "Ginza Shopping District",
+          coords: { lat: 35.6712, lng: 139.7649, confidence: "high" },
           category: "shopping",
           description:
             "Browse flagship stores along Chuo-dori: Uniqlo 12-floor flagship, Itoya stationery paradise.",
@@ -308,6 +326,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "19:00",
           name: "Roppongi Yokocho",
+          coords: { lat: 35.6627, lng: 139.7314, confidence: "high" },
           category: "food",
           description:
             "Atmospheric indoor food alley featuring 14 small restaurants under one roof.",
@@ -327,6 +346,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "06:00",
           name: "Toyosu Fish Market",
+          coords: { lat: 35.6487, lng: 139.7868, confidence: "high" },
           category: "food",
           description:
             "Watch the famous tuna auction from the observation gallery, then enjoy the freshest sushi at the market restaurants.",
@@ -338,6 +358,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "09:00",
           name: "Yanaka District",
+          coords: { lat: 35.7278, lng: 139.7683, confidence: "high" },
           category: "culture",
           description:
             "Explore one of Tokyo's last remaining shitamachi old-town neighborhoods.",
@@ -350,6 +371,7 @@ export const MOCK_TOKYO_ITINERARY: Itinerary = {
         {
           time: "13:00",
           name: "Afuri Ramen, Ebisu",
+          coords: { lat: 35.6464, lng: 139.7100, confidence: "high" },
           category: "food",
           description:
             "Final bowl of yuzu shio ramen at this beloved chain known for its light, citrus-infused broth.",

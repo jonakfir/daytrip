@@ -1,0 +1,12 @@
+{
+  "name": "daytrip-claude-proxy",
+  "version": "1.0.0",
+  "description": "Local proxy that forwards Daytrip trip-generation requests to the Claude CLI (uses your Claude Max subscription).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "tunnel": "cloudflared tunnel --url http://localhost:4242"
+  },
+  "dependencies": {}
+}
